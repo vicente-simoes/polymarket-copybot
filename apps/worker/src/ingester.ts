@@ -4,6 +4,7 @@ import pino from 'pino';
 import { fetchWalletActivity, buildDedupeKey, PolymarketActivity } from './polymarket';
 import { resolveMapping } from './mapping';
 import { captureQuote } from './quotes';
+import { generatePaperIntentForTrade } from './paper';
 
 const logger = pino({ name: 'ingester' });
 
@@ -53,7 +54,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
             const leaderUsdc = parseFloat(activity.usdcSize);
 
             // Store normalized trade with FK to raw
-            await prisma.trade.create({
+            const newTrade = await prisma.trade.create({
                 data: {
                     leaderId,
                     dedupeKey,
@@ -91,8 +92,13 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                 if (quoteId) {
                     logger.debug({ quoteId, marketKey: mapping.marketKey }, 'Quote captured for trade');
                 }
+
+                // Generate paper intent for this trade
+                await generatePaperIntentForTrade(newTrade.id);
             } else {
                 logger.warn({ conditionId: activity.conditionId, outcome: activity.outcome }, 'Mapping not found - quotes will be skipped');
+                // Still generate paper intent (will record SKIP_MISSING_MAPPING)
+                await generatePaperIntentForTrade(newTrade.id);
             }
 
         } catch (error) {
