@@ -12,6 +12,7 @@ import {
 import pino from 'pino';
 import { getLatestQuote } from './quotes';
 import { resolveMapping } from './mapping';
+import { simulateFillForIntent } from './fills';
 
 const logger = pino({ name: 'paper' });
 
@@ -176,6 +177,9 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
             reason: decision.decisionReason,
         }, 'Paper intent: SKIP');
     }
+
+    // Simulate the fill immediately
+    await simulateFillForIntent(intent.id);
 
     return intent.id;
 }
