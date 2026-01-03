@@ -1,12 +1,69 @@
-// Worker entry point - trade ingestion and paper simulation
-// This will be implemented in Step 7
+// Worker entry point - trade ingestion polling loop
+import 'dotenv/config';
+import pino from 'pino';
+import { ingestAllLeaders } from './ingester';
 
-console.log('Worker starting...');
-console.log('This is a placeholder - implement trade ingestion in Step 7');
+const logger = pino({
+    name: 'worker',
+    transport: {
+        target: 'pino-pretty',
+        options: {
+            colorize: true,
+        },
+    },
+});
 
-// The worker will:
-// 1. Read enabled leaders from DB
-// 2. Poll Polymarket for trades
-// 3. Store raw payloads and normalized trades
-// 4. Generate paper intents using the strategy engine
-// 5. Simulate paper fills
+const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000', 10);
+
+let isRunning = true;
+
+/**
+ * Main polling loop
+ */
+async function runPollLoop(): Promise<void> {
+    logger.info({ pollIntervalMs: POLL_INTERVAL_MS }, 'Worker starting...');
+
+    while (isRunning) {
+        const startTime = Date.now();
+
+        try {
+            const result = await ingestAllLeaders();
+
+            if (result.leadersProcessed > 0) {
+                logger.info({
+                    leadersProcessed: result.leadersProcessed,
+                    newTrades: result.totalNew,
+                    durationMs: Date.now() - startTime,
+                }, 'Poll cycle complete');
+            }
+        } catch (error) {
+            logger.error({ error }, 'Poll cycle failed');
+        }
+
+        // Wait for next poll interval
+        await sleep(POLL_INTERVAL_MS);
+    }
+
+    logger.info('Worker stopped');
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Graceful shutdown handlers
+process.on('SIGINT', () => {
+    logger.info('Received SIGINT, shutting down...');
+    isRunning = false;
+});
+
+process.on('SIGTERM', () => {
+    logger.info('Received SIGTERM, shutting down...');
+    isRunning = false;
+});
+
+// Start the worker
+runPollLoop().catch((error) => {
+    logger.fatal({ error }, 'Worker crashed');
+    process.exit(1);
+});
