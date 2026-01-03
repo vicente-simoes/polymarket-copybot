@@ -8,7 +8,15 @@
         "build": "tsc"
     },
     "dependencies": {
-        "@polymarket-bot/core": "workspace:*",
-        "@polymarket-bot/db": "workspace:*"
+        "@polymarket-bot/core": "file:../../packages/core",
+        "@polymarket-bot/db": "file:../../packages/db",
+        "axios": "^1.7.0",
+        "pino": "^9.0.0",
+        "pino-pretty": "^11.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20",
+        "tsx": "^4.0.0",
+        "typescript": "^5"
     }
 }

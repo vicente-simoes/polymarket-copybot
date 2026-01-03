@@ -9,7 +9,9 @@
         "prisma": "prisma"
     },
     "dependencies": {
+        "@prisma/adapter-pg": "^7.2.0",
         "@prisma/client": "^7.2.0",
+        "pg": "^8.16.3",
         "prisma": "^7.2.0"
     },
     "devDependencies": {

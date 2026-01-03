@@ -11,7 +11,16 @@
     "db:studio": "pnpm --filter @polymarket-bot/db prisma studio",
     "db:generate": "pnpm --filter @polymarket-bot/db prisma generate"
   },
-  "keywords": ["polymarket", "copy-trading", "paper-trading"],
+  "keywords": [
+    "polymarket",
+    "copy-trading",
+    "paper-trading"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
 }

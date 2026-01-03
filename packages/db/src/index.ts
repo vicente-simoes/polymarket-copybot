@@ -1,7 +1,14 @@
 // Database package - Prisma client and utilities
 // Exports the Prisma client for use by web and worker apps
 
-import { PrismaClient } from './generated/prisma';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from './generated/prisma/client';
+
+// Create connection pool
+const connectionString = process.env.DATABASE_URL ?? 'postgresql://polymarket:polymarket@localhost:5432/polymarket';
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
 
 // Create a singleton Prisma client instance
 const globalForPrisma = globalThis as unknown as {
@@ -11,6 +18,7 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma =
     globalForPrisma.prisma ??
     new PrismaClient({
+        adapter,
         log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
     });
 
@@ -18,6 +26,7 @@ if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.prisma = prisma;
 }
 
-// Re-export Prisma types for convenience
-export { PrismaClient } from './generated/prisma';
-export * from './generated/prisma';
+// Re-export PrismaClient and types
+export { PrismaClient } from './generated/prisma/client';
+export * from './generated/prisma/models';
+export * from './generated/prisma/enums';
