@@ -3,6 +3,7 @@ import { prisma } from '@polymarket-bot/db';
 import pino from 'pino';
 import { fetchWalletActivity, buildDedupeKey, PolymarketActivity } from './polymarket';
 import { resolveMapping } from './mapping';
+import { captureQuote } from './quotes';
 
 const logger = pino({ name: 'ingester' });
 
@@ -84,6 +85,12 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
             const mapping = await resolveMapping(activity.conditionId, activity.outcome);
             if (mapping) {
                 logger.debug({ conditionId: activity.conditionId, outcome: activity.outcome, clobTokenId: mapping.clobTokenId }, 'Mapping resolved');
+
+                // Capture quote immediately after ingesting trade
+                const quoteId = await captureQuote(mapping);
+                if (quoteId) {
+                    logger.debug({ quoteId, marketKey: mapping.marketKey }, 'Quote captured for trade');
+                }
             } else {
                 logger.warn({ conditionId: activity.conditionId, outcome: activity.outcome }, 'Mapping not found - quotes will be skipped');
             }
