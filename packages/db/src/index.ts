@@ -1,10 +1,23 @@
 // Database package - Prisma client and utilities
-// This will be populated after Prisma is initialized in Step 3
+// Exports the Prisma client for use by web and worker apps
 
-// Placeholder export - will be replaced with actual Prisma client
-export const placeholder = 'Database package initialized';
+import { PrismaClient } from './generated/prisma';
 
-// Note: After running `pnpm prisma init` and `pnpm prisma generate`,
-// this file will export the Prisma client:
-// export { PrismaClient } from '@prisma/client';
-// export * from '@prisma/client';
+// Create a singleton Prisma client instance
+const globalForPrisma = globalThis as unknown as {
+    prisma: PrismaClient | undefined;
+};
+
+export const prisma =
+    globalForPrisma.prisma ??
+    new PrismaClient({
+        log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    });
+
+if (process.env.NODE_ENV !== 'production') {
+    globalForPrisma.prisma = prisma;
+}
+
+// Re-export Prisma types for convenience
+export { PrismaClient } from './generated/prisma';
+export * from './generated/prisma';

@@ -1,0 +1,168 @@
+// Polymarket Copy-Trader Database Schema
+// This is the source of truth for all tables
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// Leaders - Wallets being tracked for copy-trading
+// ============================================================================
+model Leader {
+  id        String   @id @default(uuid())
+  label     String
+  wallet    String   @unique // lowercase 0x...
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  tradeRaws TradeRaw[]
+  trades    Trade[]
+
+  @@map("leaders")
+}
+
+// ============================================================================
+// Raw Events - Store full API payloads for audit and reprocessing
+// ============================================================================
+model TradeRaw {
+  id         String   @id @default(uuid())
+  leaderId   String
+  leader     Leader   @relation(fields: [leaderId], references: [id])
+  source     String   // e.g., "data-api/activity"
+  payload    Json     // entire trade JSON from API
+  ingestedAt DateTime @default(now())
+
+  trade Trade?
+
+  @@map("trade_raw")
+}
+
+model QuoteRaw {
+  id         String   @id @default(uuid())
+  marketKey  String
+  payload    Json     // entire quote JSON from API
+  capturedAt DateTime @default(now())
+
+  quote Quote?
+
+  @@map("quote_raw")
+}
+
+// ============================================================================
+// Normalized Trades - Parsed and deduplicated trade records
+// ============================================================================
+model Trade {
+  id          String   @id @default(uuid())
+  leaderId    String
+  leader      Leader   @relation(fields: [leaderId], references: [id])
+  dedupeKey   String   @unique // leaderWallet|txHash|side|conditionId|outcome|size|price
+  txHash      String
+  tradeTs     DateTime // leader trade timestamp
+  detectedAt  DateTime @default(now()) // when our watcher saw it
+  side        TradeSide
+  conditionId String
+  outcome     String   // YES/NO or outcomeIndex
+  leaderPrice Decimal  @db.Decimal(20, 10)
+  leaderSize  Decimal  @db.Decimal(20, 10) // shares
+  leaderUsdc  Decimal  @db.Decimal(20, 10) // notional
+  title       String?  // market title, nullable
+  rawId       String   @unique
+  raw         TradeRaw @relation(fields: [rawId], references: [id])
+
+  paperIntents PaperIntent[]
+
+  @@index([leaderId])
+  @@index([conditionId])
+  @@index([tradeTs])
+  @@map("trades")
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+// ============================================================================
+// Market Mapping - Maps (conditionId, outcome) to tradable instrument
+// ============================================================================
+model MarketMapping {
+  id          String   @id @default(uuid())
+  conditionId String
+  outcome     String
+  marketKey   String   // internal canonical key
+  clobTokenId String?  // token ID for CLOB API
+  assetId     String?  // alternative asset ID
+  updatedAt   DateTime @updatedAt
+
+  @@unique([conditionId, outcome])
+  @@map("market_mapping")
+}
+
+// ============================================================================
+// Quotes - Top-of-book snapshots (best bid/ask)
+// ============================================================================
+model Quote {
+  id         String   @id @default(uuid())
+  marketKey  String
+  capturedAt DateTime @default(now())
+  bestBid    Decimal  @db.Decimal(20, 10)
+  bestAsk    Decimal  @db.Decimal(20, 10)
+  bidSize    Decimal? @db.Decimal(20, 10)
+  askSize    Decimal? @db.Decimal(20, 10)
+  rawId      String   @unique
+  raw        QuoteRaw @relation(fields: [rawId], references: [id])
+
+  paperFills PaperFill[]
+
+  @@index([marketKey])
+  @@index([capturedAt])
+  @@map("quotes")
+}
+
+// ============================================================================
+// Paper Trading - Intents and simulated fills
+// ============================================================================
+model PaperIntent {
+  id              String          @id @default(uuid())
+  tradeId         String
+  trade           Trade           @relation(fields: [tradeId], references: [id])
+  ratio           Decimal         @db.Decimal(10, 6) // e.g., 0.01
+  yourUsdcTarget  Decimal         @db.Decimal(20, 10)
+  yourSide        TradeSide
+  limitPrice      Decimal         @db.Decimal(20, 10) // the price you would try
+  decision        IntentDecision
+  decisionReason  String          // e.g., SKIP_PRICE_MOVED, SKIP_SPREAD_TOO_WIDE
+  createdAt       DateTime        @default(now())
+
+  paperFill PaperFill?
+
+  @@index([tradeId])
+  @@index([decision])
+  @@map("paper_intents")
+}
+
+enum IntentDecision {
+  TRADE
+  SKIP
+}
+
+model PaperFill {
+  id             String    @id @default(uuid())
+  intentId       String    @unique
+  intent         PaperIntent @relation(fields: [intentId], references: [id])
+  filled         Boolean
+  fillPrice      Decimal?  @db.Decimal(20, 10)
+  fillAt         DateTime?
+  slippageAbs    Decimal?  @db.Decimal(20, 10)
+  slippagePct    Decimal?  @db.Decimal(10, 6)
+  matchSamePrice Boolean
+  quoteId        String?
+  quote          Quote?    @relation(fields: [quoteId], references: [id])
+
+  @@map("paper_fills")
+}
