@@ -1,97 +1,87 @@
 import { prisma } from '@polymarket-bot/db';
-import Link from 'next/link';
+import { StatCard } from './components';
 
-async function getDashboardData() {
+export const dynamic = 'force-dynamic';
+
+async function getStats() {
+  const [leaderCount, tradeCount, paperIntentCount] = await Promise.all([
+    prisma.leader.count({ where: { enabled: true } }),
+    prisma.trade.count(),
+    prisma.paperIntent.count(),
+  ]);
+
+  return { leaderCount, tradeCount, paperIntentCount };
+}
+
+async function checkDbConnection() {
   try {
-    const [leaderCount, tradeCount, intentCount] = await Promise.all([
-      prisma.leader.count(),
-      prisma.trade.count(),
-      prisma.paperIntent.count(),
-    ]);
-    return { leaderCount, tradeCount, intentCount, connected: true };
-  } catch (error) {
-    console.error('Database connection error:', error);
-    return { leaderCount: 0, tradeCount: 0, intentCount: 0, connected: false };
+    await prisma.$queryRaw`SELECT 1`;
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
-export default async function Home() {
-  const data = await getDashboardData();
+export default async function DashboardPage() {
+  const isConnected = await checkDbConnection();
+  const stats = await getStats();
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif', maxWidth: '1200px', margin: '0 auto' }}>
-      <header style={{ marginBottom: '2rem', borderBottom: '1px solid #eee', paddingBottom: '1rem' }}>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 600, color: '#1a1a1a' }}>
-          📊 Polymarket Copy-Trader Dashboard
-        </h1>
-        <p style={{ color: '#666', marginTop: '0.5rem' }}>
-          Paper trading dashboard for copy-trading Polymarket leaders
-        </p>
-      </header>
-
-      {/* Database Status */}
-      <div style={{
-        padding: '1rem',
-        marginBottom: '2rem',
-        borderRadius: '8px',
-        backgroundColor: data.connected ? '#d4edda' : '#f8d7da',
-        border: `1px solid ${data.connected ? '#c3e6cb' : '#f5c6cb'}`
-      }}>
-        <strong>Database:</strong> {data.connected ? '✅ Connected' : '❌ Not Connected'}
+    <div className="animate-fade-in">
+      <div className="page-header">
+        <h1 className="page-title">Dashboard Overview</h1>
+        <p className="page-subtitle">Welcome to your copy trading control center</p>
       </div>
 
-      {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        <StatCard title="Leaders" value={data.leaderCount} href="/leaders" />
-        <StatCard title="Trades" value={data.tradeCount} href="/trades" />
-        <StatCard title="Paper Intents" value={data.intentCount} href="/paper" />
+      <div className="mb-4">
+        {isConnected ? (
+          <div className="badge badge-green">
+            Database: Connected
+          </div>
+        ) : (
+          <div className="badge badge-red">
+            Database: Not Connected
+          </div>
+        )}
       </div>
 
-      {/* Navigation */}
-      <div style={{ marginTop: '2rem' }}>
-        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>Pages</h2>
-        <nav style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <NavLink href="/leaders">👥 Leaders</NavLink>
-          <NavLink href="/trades">📈 Trades</NavLink>
-          <NavLink href="/paper">📝 Paper</NavLink>
-          <NavLink href="/metrics">📊 Metrics</NavLink>
-          <NavLink href="/debug">🔧 Debug</NavLink>
-        </nav>
+      <div className="grid-cols-3">
+        <StatCard
+          label="Active Leaders"
+          value={stats.leaderCount}
+          color="var(--accent-secondary)"
+          subtitle="Monitored for trades"
+        />
+        <StatCard
+          label="Total Trades"
+          value={stats.tradeCount}
+          color="var(--text-primary)"
+          subtitle="Ingested from API"
+        />
+        <StatCard
+          label="Paper Intents"
+          value={stats.paperIntentCount}
+          color="var(--accent-primary)"
+          subtitle="Simulated decisions"
+        />
+      </div>
+
+      <div className="mt-4 card">
+        <h3 style={{ marginBottom: '1rem' }}>System Status</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+          <div>
+            <div className="stat-label">Worker Status</div>
+            <div style={{ marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#3fb950', display: 'block' }}></span>
+              Running
+            </div>
+          </div>
+          <div>
+            <div className="stat-label">Last Update</div>
+            <div style={{ marginTop: '0.25rem' }}>{new Date().toLocaleTimeString()}</div>
+          </div>
+        </div>
       </div>
     </div>
-  );
-}
-
-function StatCard({ title, value, href }: { title: string; value: number; href: string }) {
-  return (
-    <Link href={href} style={{ textDecoration: 'none' }}>
-      <div style={{
-        padding: '1.5rem',
-        backgroundColor: '#f9fafb',
-        borderRadius: '8px',
-        border: '1px solid #e5e7eb',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-      }}>
-        <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.5rem' }}>{title}</div>
-        <div style={{ fontSize: '2rem', fontWeight: 700, color: '#1f2937' }}>{value}</div>
-      </div>
-    </Link>
-  );
-}
-
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link href={href} style={{
-      padding: '0.75rem 1.5rem',
-      backgroundColor: '#3b82f6',
-      color: 'white',
-      borderRadius: '6px',
-      textDecoration: 'none',
-      fontWeight: 500,
-      transition: 'background-color 0.2s',
-    }}>
-      {children}
-    </Link>
   );
 }

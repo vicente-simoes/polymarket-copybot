@@ -5,8 +5,13 @@ import { fetchWalletActivity, buildDedupeKey, PolymarketActivity } from './polym
 import { resolveMapping } from './mapping';
 import { captureQuote } from './quotes';
 import { generatePaperIntentForTrade } from './paper';
+import { withRetry, sleep } from './retry';
+import { initLeaderHealth, updateLeaderHealth } from './health';
 
 const logger = pino({ name: 'ingester' });
+
+// Stagger delay between leaders to avoid API bursts
+const LEADER_STAGGER_MS = parseInt(process.env.LEADER_STAGGER_MS || '500', 10);
 
 /**
  * Ingest trades for a single leader wallet
@@ -116,7 +121,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
 }
 
 /**
- * Ingest trades for all enabled leaders
+ * Ingest trades for all enabled leaders with staggering
  */
 export async function ingestAllLeaders(): Promise<{ totalNew: number; leadersProcessed: number }> {
     const leaders = await prisma.leader.findMany({
@@ -130,18 +135,38 @@ export async function ingestAllLeaders(): Promise<{ totalNew: number; leadersPro
 
     logger.info({ leaderCount: leaders.length }, 'Starting ingestion for enabled leaders');
 
+    // Initialize health tracking for all leaders
+    for (const leader of leaders) {
+        initLeaderHealth(leader.id, leader.label, leader.wallet, leader.enabled);
+    }
+
     let totalNew = 0;
 
-    for (const leader of leaders) {
+    for (let i = 0; i < leaders.length; i++) {
+        const leader = leaders[i];
+
         try {
-            const newTrades = await ingestTradesForLeader(leader.id, leader.wallet);
+            // Use retry wrapper for resilience
+            const newTrades = await withRetry(
+                () => ingestTradesForLeader(leader.id, leader.wallet),
+                `ingest:${leader.label}`,
+                { maxRetries: 3, baseDelayMs: 1000 }
+            );
+
             totalNew += newTrades;
+            updateLeaderHealth(leader.id, true, newTrades);
 
             if (newTrades > 0) {
                 logger.info({ leader: leader.label, wallet: leader.wallet, newTrades }, 'Leader ingestion complete');
             }
         } catch (error) {
-            logger.error({ leader: leader.label, error }, 'Failed to ingest trades for leader');
+            updateLeaderHealth(leader.id, false);
+            logger.error({ leader: leader.label, error }, 'Failed to ingest trades for leader (all retries exhausted)');
+        }
+
+        // Stagger between leaders to avoid API rate limits
+        if (i < leaders.length - 1 && LEADER_STAGGER_MS > 0) {
+            await sleep(LEADER_STAGGER_MS);
         }
     }
 

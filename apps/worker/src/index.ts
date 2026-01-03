@@ -1,7 +1,14 @@
-// Worker entry point - trade ingestion polling loop
+// Worker entry point - trade ingestion polling loop with hardening
 import 'dotenv/config';
 import pino from 'pino';
 import { ingestAllLeaders } from './ingester';
+import { sleep } from './retry';
+import {
+    waitForDatabase,
+    recordPollCycle,
+    logHealthStatus,
+    getHealthSummary
+} from './health';
 
 const logger = pino({
     name: 'worker',
@@ -14,14 +21,28 @@ const logger = pino({
 });
 
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000', 10);
+const HEALTH_LOG_INTERVAL = parseInt(process.env.HEALTH_LOG_INTERVAL || '60000', 10); // 1 minute
 
 let isRunning = true;
+let lastHealthLog = 0;
 
 /**
- * Main polling loop
+ * Main polling loop with hardening
  */
 async function runPollLoop(): Promise<void> {
-    logger.info({ pollIntervalMs: POLL_INTERVAL_MS }, 'Worker starting...');
+    logger.info({
+        pollIntervalMs: POLL_INTERVAL_MS,
+        healthLogIntervalMs: HEALTH_LOG_INTERVAL,
+    }, 'Worker starting...');
+
+    // Wait for database to be available
+    const dbReady = await waitForDatabase();
+    if (!dbReady) {
+        logger.fatal('Cannot start worker without database connection');
+        process.exit(1);
+    }
+
+    logger.info('Database connected, starting poll loop');
 
     while (isRunning) {
         const startTime = Date.now();
@@ -29,7 +50,10 @@ async function runPollLoop(): Promise<void> {
         try {
             const result = await ingestAllLeaders();
 
-            if (result.leadersProcessed > 0) {
+            // Record successful poll
+            recordPollCycle();
+
+            if (result.leadersProcessed > 0 || result.totalNew > 0) {
                 logger.info({
                     leadersProcessed: result.leadersProcessed,
                     newTrades: result.totalNew,
@@ -40,26 +64,49 @@ async function runPollLoop(): Promise<void> {
             logger.error({ error }, 'Poll cycle failed');
         }
 
-        // Wait for next poll interval
-        await sleep(POLL_INTERVAL_MS);
+        // Periodic health logging
+        const now = Date.now();
+        if (now - lastHealthLog >= HEALTH_LOG_INTERVAL) {
+            logHealthStatus();
+            lastHealthLog = now;
+        }
+
+        // Wait for next poll interval with jitter to avoid thundering herd
+        await sleep(POLL_INTERVAL_MS, 500);
     }
 
     logger.info('Worker stopped');
 }
 
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Graceful shutdown handler
+ */
+async function shutdown(signal: string): Promise<void> {
+    logger.info({ signal }, 'Received shutdown signal');
+    isRunning = false;
+
+    // Log final health status
+    const health = getHealthSummary();
+    logger.info(health, 'Final worker health status');
+
+    // Give time for cleanup
+    await sleep(1000);
+    process.exit(0);
 }
 
 // Graceful shutdown handlers
-process.on('SIGINT', () => {
-    logger.info('Received SIGINT, shutting down...');
-    isRunning = false;
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Unhandled rejection handler
+process.on('unhandledRejection', (reason, promise) => {
+    logger.error({ reason }, 'Unhandled promise rejection');
 });
 
-process.on('SIGTERM', () => {
-    logger.info('Received SIGTERM, shutting down...');
-    isRunning = false;
+// Uncaught exception handler
+process.on('uncaughtException', (error) => {
+    logger.fatal({ error }, 'Uncaught exception - shutting down');
+    process.exit(1);
 });
 
 // Start the worker

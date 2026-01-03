@@ -1,24 +1,28 @@
 import { prisma } from '@polymarket-bot/db';
 import Link from 'next/link';
+import { StatCard } from '../components';
 
 interface TradesPageProps {
     searchParams: Promise<{ leader?: string }>;
 }
 
-async function getTrades(leaderFilter?: string) {
+async function getTrades(leaderId?: string) {
     return prisma.trade.findMany({
-        where: leaderFilter ? { leaderId: leaderFilter } : undefined,
+        where: leaderId ? { leaderId } : undefined,
         include: {
             leader: {
                 select: { label: true, wallet: true },
             },
+            paperIntents: {
+                select: { id: true }, // just check existence
+            },
         },
         orderBy: { tradeTs: 'desc' },
-        take: 100, // Limit for performance
+        take: 100,
     });
 }
 
-async function getLeadersForFilter() {
+async function getLeaders() {
     return prisma.leader.findMany({
         select: { id: true, label: true },
         orderBy: { label: 'asc' },
@@ -27,212 +31,127 @@ async function getLeadersForFilter() {
 
 export default async function TradesPage({ searchParams }: TradesPageProps) {
     const params = await searchParams;
-    const leaderFilter = params.leader;
+    const selectedLeaderId = params.leader;
 
     const [trades, leaders] = await Promise.all([
-        getTrades(leaderFilter),
-        getLeadersForFilter(),
+        getTrades(selectedLeaderId),
+        getLeaders(),
     ]);
 
     return (
-        <div style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif', maxWidth: '1400px', margin: '0 auto' }}>
-            {/* Header */}
-            <div style={{ marginBottom: '1.5rem' }}>
-                <Link href="/" style={{ color: '#3b82f6', textDecoration: 'none', fontSize: '0.875rem' }}>
-                    ← Back to Dashboard
-                </Link>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 600, marginTop: '0.5rem' }}>
-                    📈 Trades Timeline
-                </h1>
-                <p style={{ color: '#666' }}>
-                    View leader trades ingested from Polymarket
-                </p>
+        <div className="animate-fade-in">
+            <div className="page-header">
+                <h1 className="page-title">Trade Ingestion</h1>
+                <p className="page-subtitle">Real-time trade feed from monitored wallets</p>
             </div>
 
-            {/* Filters */}
-            <div style={{
-                padding: '1rem',
-                backgroundColor: '#f9fafb',
-                borderRadius: '8px',
-                border: '1px solid #e5e7eb',
-                marginBottom: '1.5rem',
-                display: 'flex',
-                gap: '1rem',
-                alignItems: 'center',
-            }}>
-                <label style={{ fontWeight: 500, fontSize: '0.875rem' }}>Filter by Leader:</label>
-                <form style={{ display: 'flex', gap: '0.5rem' }}>
-                    <select
-                        name="leader"
-                        defaultValue={leaderFilter || ''}
-                        style={{
-                            padding: '0.5rem 0.75rem',
-                            border: '1px solid #d1d5db',
-                            borderRadius: '6px',
-                            fontSize: '0.875rem',
-                            minWidth: '200px',
-                        }}
+            <div className="card mb-4" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Filter by Leader:</div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <Link
+                        href="/trades"
+                        className={`badge ${!selectedLeaderId ? 'badge-blue' : 'badge-gray'}`}
+                        style={{ textDecoration: 'none', cursor: 'pointer' }}
                     >
-                        <option value="">All Leaders</option>
-                        {leaders.map((leader) => (
-                            <option key={leader.id} value={leader.id}>
-                                {leader.label}
-                            </option>
-                        ))}
-                    </select>
-                    <button
-                        type="submit"
-                        style={{
-                            padding: '0.5rem 1rem',
-                            backgroundColor: '#3b82f6',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                        }}
-                    >
-                        Filter
-                    </button>
-                    {leaderFilter && (
+                        All
+                    </Link>
+                    {leaders.map(l => (
                         <Link
-                            href="/trades"
-                            style={{
-                                padding: '0.5rem 1rem',
-                                backgroundColor: '#6b7280',
-                                color: 'white',
-                                borderRadius: '6px',
-                                textDecoration: 'none',
-                                fontWeight: 500,
-                            }}
+                            key={l.id}
+                            href={`/trades?leader=${l.id}`}
+                            className={`badge ${selectedLeaderId === l.id ? 'badge-blue' : 'badge-gray'}`}
+                            style={{ textDecoration: 'none', cursor: 'pointer' }}
                         >
-                            Clear
+                            {l.label}
                         </Link>
-                    )}
-                </form>
-                <div style={{ marginLeft: 'auto', fontSize: '0.875rem', color: '#6b7280' }}>
-                    Showing {trades.length} trades
+                    ))}
                 </div>
             </div>
 
-            {/* Trades Table */}
-            {trades.length === 0 ? (
-                <div style={{
-                    padding: '3rem',
-                    textAlign: 'center',
-                    color: '#6b7280',
-                    backgroundColor: '#f9fafb',
-                    borderRadius: '8px',
-                    border: '1px dashed #d1d5db',
-                }}>
-                    No trades found. Make sure the worker is running and leaders are enabled.
-                </div>
-            ) : (
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                        <thead>
-                            <tr style={{ backgroundColor: '#f3f4f6', textAlign: 'left' }}>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>Time</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>Leader</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>Side</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>Market / Outcome</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb', textAlign: 'right' }}>Price</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb', textAlign: 'right' }}>USDC</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb', textAlign: 'right' }}>Size</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>Latency</th>
-                                <th style={{ padding: '0.75rem', borderBottom: '1px solid #e5e7eb' }}>Tx</th>
+            <div className="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Leader</th>
+                            <th>Market</th>
+                            <th>Side</th>
+                            <th className="text-right">Price</th>
+                            <th className="text-right">USDC</th>
+                            <th className="text-right">Size</th>
+                            <th className="text-right">Latency</th>
+                            <th className="text-right">Tx</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {trades.length === 0 ? (
+                            <tr>
+                                <td colSpan={9} className="text-center" style={{ padding: '3rem', color: 'var(--text-muted)' }}>
+                                    No trades found.
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {trades.map((trade) => {
-                                const latencyMs = trade.detectedAt.getTime() - trade.tradeTs.getTime();
-                                const latencyDisplay = latencyMs < 1000
-                                    ? `${latencyMs}ms`
-                                    : latencyMs < 60000
-                                        ? `${(latencyMs / 1000).toFixed(1)}s`
-                                        : `${Math.round(latencyMs / 60000)}m`;
+                        ) : (
+                            trades.map(trade => {
+                                const latency = trade.detectedAt.getTime() - trade.tradeTs.getTime();
+                                const latencyColor = latency < 2000 ? 'var(--success-text)' : latency < 5000 ? 'var(--warn-text)' : 'var(--error-text)';
 
                                 return (
-                                    <tr key={trade.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                                        <td style={{ padding: '0.75rem', whiteSpace: 'nowrap' }}>
-                                            <div>{new Date(trade.tradeTs).toLocaleDateString()}</div>
-                                            <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
-                                                {new Date(trade.tradeTs).toLocaleTimeString()}
+                                    <tr key={trade.id}>
+                                        <td>
+                                            <div>{new Date(trade.tradeTs).toLocaleTimeString()}</div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                {new Date(trade.tradeTs).toLocaleDateString()}
                                             </div>
                                         </td>
-                                        <td style={{ padding: '0.75rem' }}>
+                                        <td>
                                             <div style={{ fontWeight: 500 }}>{trade.leader.label}</div>
-                                            <div style={{ color: '#6b7280', fontSize: '0.75rem', fontFamily: 'monospace' }}>
-                                                {trade.leader.wallet.slice(0, 8)}...
+                                            <div className="code-mono" style={{ fontSize: '0.75rem' }}>
+                                                {trade.leader.wallet.substring(0, 6)}...
                                             </div>
                                         </td>
-                                        <td style={{ padding: '0.75rem' }}>
-                                            <span style={{
-                                                padding: '0.25rem 0.5rem',
-                                                borderRadius: '4px',
-                                                fontSize: '0.75rem',
-                                                fontWeight: 600,
-                                                backgroundColor: trade.side === 'BUY' ? '#d1fae5' : '#fee2e2',
-                                                color: trade.side === 'BUY' ? '#065f46' : '#991b1b',
-                                            }}>
-                                                {trade.side}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '0.75rem', maxWidth: '250px' }}>
-                                            <div style={{
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                                fontWeight: 500,
-                                            }}>
+                                        <td style={{ maxWidth: '300px' }}>
+                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={trade.title || ''}>
                                                 {trade.title || 'Unknown Market'}
                                             </div>
-                                            <div style={{ color: '#6b7280', fontSize: '0.75rem' }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                 {trade.outcome}
                                             </div>
                                         </td>
-                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'monospace' }}>
-                                            {Number(trade.leaderPrice).toFixed(4)}
-                                        </td>
-                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'monospace', fontWeight: 500 }}>
-                                            ${Number(trade.leaderUsdc).toFixed(2)}
-                                        </td>
-                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'monospace', color: '#6b7280' }}>
-                                            {Number(trade.leaderSize).toFixed(2)}
-                                        </td>
-                                        <td style={{ padding: '0.75rem' }}>
-                                            <span style={{
-                                                padding: '0.125rem 0.375rem',
-                                                borderRadius: '4px',
-                                                fontSize: '0.75rem',
-                                                backgroundColor: latencyMs < 5000 ? '#d1fae5' : latencyMs < 30000 ? '#fef3c7' : '#fee2e2',
-                                                color: latencyMs < 5000 ? '#065f46' : latencyMs < 30000 ? '#92400e' : '#991b1b',
-                                            }}>
-                                                {latencyDisplay}
+                                        <td>
+                                            <span className={`badge ${trade.side === 'BUY' ? 'badge-green' : 'badge-red'}`}>
+                                                {trade.side}
                                             </span>
                                         </td>
-                                        <td style={{ padding: '0.75rem' }}>
+                                        <td className="text-right code-mono">
+                                            {Number(trade.leaderPrice).toFixed(3)}
+                                        </td>
+                                        <td className="text-right code-mono" style={{ fontWeight: 600 }}>
+                                            ${Number(trade.leaderUsdc).toFixed(2)}
+                                        </td>
+                                        <td className="text-right code-mono" style={{ color: 'var(--text-muted)' }}>
+                                            {Number(trade.leaderSize).toFixed(1)}
+                                        </td>
+                                        <td className="text-right" style={{ color: latencyColor, fontWeight: 500 }}>
+                                            {latency}ms
+                                        </td>
+                                        <td className="text-right">
                                             <a
                                                 href={`https://polygonscan.com/tx/${trade.txHash}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                style={{
-                                                    color: '#3b82f6',
-                                                    textDecoration: 'none',
-                                                    fontFamily: 'monospace',
-                                                    fontSize: '0.75rem',
-                                                }}
+                                                className="badge badge-gray"
+                                                style={{ textDecoration: 'none' }}
                                             >
-                                                {trade.txHash.slice(0, 10)}...
+                                                Scan ↗
                                             </a>
                                         </td>
                                     </tr>
                                 );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
