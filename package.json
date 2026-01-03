@@ -1,0 +1,17 @@
+{
+  "name": "polymarket-copybot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Polymarket copy-trading bot with paper trading and Next.js dashboard",
+  "scripts": {
+    "dev:web": "pnpm --filter @polymarket-bot/web dev",
+    "dev:worker": "pnpm --filter @polymarket-bot/worker dev",
+    "build": "pnpm -r build",
+    "db:migrate": "pnpm --filter @polymarket-bot/db prisma migrate dev",
+    "db:studio": "pnpm --filter @polymarket-bot/db prisma studio",
+    "db:generate": "pnpm --filter @polymarket-bot/db prisma generate"
+  },
+  "keywords": ["polymarket", "copy-trading", "paper-trading"],
+  "author": "",
+  "license": "MIT"
+}
