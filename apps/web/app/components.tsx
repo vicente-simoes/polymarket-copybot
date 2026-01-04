@@ -31,7 +31,7 @@ export function MobileLayout({ children, sidebar }: { children: React.ReactNode;
                 <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>
                     {menuOpen ? '✕' : '☰'}
                 </button>
-                <span style={{ fontWeight: 600 }}>📈 Polymarketpy</span>
+                <span style={{ fontWeight: 600 }}>📈 PolymarketSpy</span>
                 <div style={{ width: '40px' }}></div> {/* Spacer for centering */}
             </header>
 
@@ -71,7 +71,7 @@ export function Sidebar() {
     return (
         <>
             <div className="sidebar-brand">
-                <span>📈</span> Polymarketpy
+                <span>📈</span> PolymarketSpy
             </div>
             <nav>
                 {navItems.map((item) => (
