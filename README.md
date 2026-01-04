@@ -56,3 +56,9 @@ See `stepbystep.md` for the full implementation guide.
 - [ ] Step 2: Add Postgres (local dev)
 - [ ] Step 3: Set up Prisma (DB schema)
 - [ ] Step 4+: See stepbystep.md
+
+
+
+passphrase: polymarket-bot
+
+165.22.205.182
