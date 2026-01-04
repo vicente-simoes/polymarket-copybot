@@ -318,15 +318,89 @@ model Leader {
 ## Success Criteria
 
 ### Guardrails
-- [ ] Can edit global guardrails in dashboard, takes effect immediately
-- [ ] Can set per-leader overrides, strategy respects them
-- [ ] Operation-specific settings apply correctly (SELL more lenient)
-- [ ] SPLIT/MERGE operations are always followed
+- [x] Can edit global guardrails in dashboard, takes effect immediately
+- [x] Can set per-leader overrides, strategy respects them
+- [x] Operation-specific settings apply correctly (SELL more lenient)
+- [x] SPLIT/MERGE operations are always followed
 
 ### P&L Tracking
-- [ ] Paper fills update position shares correctly
-- [ ] All operation types (BUY/SELL/SPLIT/MERGE) handled
-- [ ] `/pnl` page shows open positions with unrealized P&L
-- [ ] P&L graph shows history with time range selector
+- [x] Paper fills update position shares correctly
+- [x] All operation types (BUY/SELL/SPLIT/MERGE) handled
+- [x] `/pnl` page shows open positions with unrealized P&L
+- [x] P&L graph shows history with time range selector
 - [ ] When market resolves, realized P&L is calculated
-- [ ] Summary shows total P&L across all positions
+- [x] Summary shows total P&L across all positions
+
+---
+
+## Deployment Steps
+
+### 1. Run Database Migration
+
+```bash
+# Navigate to the db package
+cd packages/db
+
+# Run migration (creates Settings, Position, Resolution, PnlSnapshot tables)
+DATABASE_URL="postgresql://..." npx prisma migrate deploy
+
+# Generate Prisma client
+npx prisma generate
+```
+
+### 2. Install Dependencies
+
+```bash
+# From repo root
+npm install
+```
+
+### 3. Verify New Pages
+
+After deployment, verify these new dashboard pages:
+- `/settings` — Global guardrails configuration
+- `/pnl` — P&L dashboard with charts
+- `/leaders` — Now includes per-leader override fields
+
+### 4. Environment Variables (Optional)
+
+New optional environment variables for worker:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PNL_SNAPSHOT_INTERVAL` | 3600000 (1 hour) | How often to record P&L snapshots |
+
+### 5. First-Time Setup
+
+On first access, the Settings table auto-creates with defaults:
+- Copy ratio: 1%
+- Max per trade: $2
+- Max per day: $10
+- SELL always attempt: ✓
+- SPLIT/MERGE always follow: ✓
+
+---
+
+## Files Changed
+
+### New Files
+| File | Description |
+|------|-------------|
+| `packages/core/src/settings.ts` | Settings service with caching |
+| `packages/core/src/positions.ts` | Position tracking for P&L |
+| `apps/web/app/settings/page.tsx` | Settings dashboard page |
+| `apps/web/app/pnl/page.tsx` | P&L dashboard with charts |
+| `apps/web/app/api/pnl/route.ts` | P&L API endpoint |
+
+### Modified Files
+| File | Changes |
+|------|---------|
+| `packages/db/prisma/schema.prisma` | Added Settings, Position, Resolution, PnlSnapshot tables; updated Leader with overrides |
+| `packages/core/src/strategy.ts` | Added `decidePaperIntentAsync` for DB-based config |
+| `packages/core/src/types.ts` | Added SPLIT/MERGE to trade side types |
+| `packages/core/src/reasons.ts` | Added OPERATION_ALWAYS_FOLLOW decision reason |
+| `apps/web/app/leaders/page.tsx` | Added per-leader override fields |
+| `apps/web/app/components.tsx` | Added Settings and P&L nav links |
+| `apps/worker/src/paper.ts` | Uses `decidePaperIntentAsync` |
+| `apps/worker/src/fills.ts` | Calls `updatePosition` after fills |
+| `apps/worker/src/index.ts` | Added hourly P&L snapshot task |
