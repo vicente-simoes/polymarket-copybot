@@ -88,7 +88,7 @@ cd ~/polymarket-copybot && \
 git pull origin main && \
 (cd packages/core && npm run build) && \
 (cd apps/worker && npm run build) && \
-(cd apps/web && npx next build) && \
+(cd apps/web && npx next build --webpack) && \
 sudo systemctl restart polymarket-worker polymarket-web && \
 sudo journalctl -u polymarket-worker -f
 ```
