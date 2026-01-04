@@ -107,7 +107,7 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         leaderPrice: Number(trade.leaderPrice),
         leaderSize: Number(trade.leaderSize),
         leaderUsdc: Number(trade.leaderUsdc),
-        title: trade.title ?? undefined,
+        title: trade.title ?? null,
         rawId: trade.rawId,
     };
 
