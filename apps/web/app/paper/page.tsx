@@ -17,7 +17,11 @@ async function getPaperIntents(filters: {
 }) {
     return prisma.paperIntent.findMany({
         where: {
-            ...(filters.leader && { trade: { leaderId: filters.leader } }),
+            // Exclude paper intents for backfill trades (historical)
+            trade: {
+                isBackfill: false,
+                ...(filters.leader && { leaderId: filters.leader }),
+            },
             ...(filters.decision && { decision: filters.decision as 'TRADE' | 'SKIP' }),
             ...(filters.filled !== undefined && filters.filled !== '' && {
                 paperFill: {
@@ -162,8 +166,8 @@ export default async function PaperPage({ searchParams }: PaperPageProps) {
                                                 {intent.decision}
                                             </span>
                                         </td>
-                                        <td style={{ maxWidth: '150px' }}>
-                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={intent.decisionReason}>
+                                        <td style={{ minWidth: '180px' }}>
+                                            <div style={{ fontSize: '0.85rem' }}>
                                                 {intent.decisionReason}
                                             </div>
                                         </td>

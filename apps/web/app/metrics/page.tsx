@@ -5,6 +5,11 @@ import { StatCard } from '../components';
 async function getMetrics() {
     // Get all paper intents with fills
     const intents = await prisma.paperIntent.findMany({
+        where: {
+            trade: {
+                isBackfill: false,
+            },
+        },
         include: {
             paperFill: true,
             trade: {
@@ -171,7 +176,7 @@ export default async function MetricsPage() {
                                         <td className="text-right">
                                             {leader.trades > 0 ? (
                                                 <span className={`badge ${(leader.filled / leader.trades) >= 0.8 ? 'badge-green' :
-                                                        (leader.filled / leader.trades) >= 0.5 ? 'badge-yellow' : 'badge-red'
+                                                    (leader.filled / leader.trades) >= 0.5 ? 'badge-yellow' : 'badge-red'
                                                     }`}>
                                                     {((leader.filled / leader.trades) * 100).toFixed(0)}%
                                                 </span>

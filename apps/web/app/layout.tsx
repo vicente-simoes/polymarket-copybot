@@ -3,7 +3,7 @@ import './globals.css';
 import { MobileLayout, Sidebar } from './components';
 
 export const metadata: Metadata = {
-  title: 'Polymarketpy',
+  title: 'PolymarketSpy',
   description: 'Paper copy trading system for Polymarket',
 };
 

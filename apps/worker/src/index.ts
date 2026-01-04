@@ -9,6 +9,7 @@ import {
     logHealthStatus,
     getHealthSummary
 } from './health';
+import { generateMissingPaperIntents } from './paper';
 
 const logger = pino({
     name: 'worker',
@@ -62,6 +63,13 @@ async function runPollLoop(): Promise<void> {
                     newTrades: result.totalNew,
                     durationMs: Date.now() - startTime,
                 }, 'Poll cycle complete');
+            }
+
+            // Generate paper intents for any trades that are missing them
+            // (e.g., after bug fixes or for trades that had mapping issues)
+            const missingIntents = await generateMissingPaperIntents();
+            if (missingIntents > 0) {
+                logger.info({ count: missingIntents }, 'Generated missing paper intents');
             }
         } catch (error) {
             logger.error({ error }, 'Poll cycle failed');

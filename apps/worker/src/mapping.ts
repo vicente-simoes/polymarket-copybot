@@ -39,10 +39,13 @@ export async function resolveMapping(
     conditionId: string,
     outcome: string
 ): Promise<MarketMapping | null> {
+    // Normalize outcome to uppercase for consistent lookup (stored as uppercase)
+    const normalizedOutcome = outcome.toUpperCase();
+
     // Check DB first
     const existing = await prisma.marketMapping.findUnique({
         where: {
-            conditionId_outcome: { conditionId, outcome },
+            conditionId_outcome: { conditionId, outcome: normalizedOutcome },
         },
     });
 

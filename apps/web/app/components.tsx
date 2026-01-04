@@ -27,12 +27,12 @@ export function MobileLayout({ children, sidebar }: { children: React.ReactNode;
     return (
         <>
             {/* Mobile header - visible only on mobile */}
-            <header className="mobile-header">
+            {/* Mobile header - visible only on mobile */}
+            <header className="mobile-header" style={{ justifyContent: 'flex-start', gap: '1rem' }}>
                 <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>
                     {menuOpen ? '✕' : '☰'}
                 </button>
-                <span style={{ fontWeight: 600 }}>📈 PolymarketSpy</span>
-                <div style={{ width: '40px' }}></div> {/* Spacer for centering */}
+                <span style={{ fontWeight: 600, fontSize: '1.2rem' }}>PolymarketSpy</span>
             </header>
 
             {/* Overlay for mobile */}

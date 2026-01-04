@@ -9,26 +9,23 @@ const POLYMARKET_API_BASE = 'https://data-api.polymarket.com';
 
 // Activity endpoint response types
 export interface PolymarketActivity {
-    id: string;
-    timestamp: string;
+    name: string;  // Unique activity identifier
+    timestamp: number;  // Unix timestamp (seconds)
     type: 'TRADE' | 'REDEEM' | 'MERGE' | 'SPLIT';
-    transaction_hash: string;
+    transactionHash: string;  // Note: camelCase in API response
     proxyWallet: string;
     conditionId: string;
     side: 'BUY' | 'SELL';
     outcome: string;
-    price: string;
-    size: string;
-    usdcSize: string;
-    feesPaid: string;
+    outcomeIndex: number;
+    price: number;  // API returns numbers, not strings
+    size: number;
+    usdcSize: number;
+    asset: string;
     title?: string;
     slug?: string;
+    eventSlug?: string;
     icon?: string;
-}
-
-export interface ActivityResponse {
-    data: PolymarketActivity[];
-    next_cursor?: string;
 }
 
 /**
@@ -43,7 +40,8 @@ export async function fetchWalletActivity(
 
         logger.debug({ wallet, limit }, 'Fetching wallet activity');
 
-        const response = await axios.get<ActivityResponse>(url, {
+        // Polymarket /activity endpoint returns an array directly
+        const response = await axios.get<PolymarketActivity[]>(url, {
             params: {
                 user: wallet,
                 limit,
@@ -52,7 +50,7 @@ export async function fetchWalletActivity(
             timeout: 10000,
         });
 
-        const trades = response.data.data || [];
+        const trades = response.data || [];
         logger.info({ wallet, tradeCount: trades.length }, 'Fetched trades from Polymarket');
 
         return trades;
@@ -78,7 +76,7 @@ export async function fetchWalletActivity(
 export function buildDedupeKey(wallet: string, activity: PolymarketActivity): string {
     return [
         wallet.toLowerCase(),
-        activity.transaction_hash,
+        activity.transactionHash,
         activity.side,
         activity.conditionId,
         activity.outcome,

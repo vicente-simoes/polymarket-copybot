@@ -100,6 +100,7 @@ model Trade {
   leaderSize  Decimal  @db.Decimal(20, 10) // shares
   leaderUsdc  Decimal  @db.Decimal(20, 10) // notional
   title       String?  // market title, nullable
+  isBackfill  Boolean  @default(false) // true if from initial leader backfill (historical)
   rawId       String   @unique
   raw         TradeRaw @relation(fields: [rawId], references: [id])
 
@@ -108,6 +109,7 @@ model Trade {
   @@index([leaderId])
   @@index([conditionId])
   @@index([tradeTs])
+  @@index([isBackfill])
   @@map("trades")
 }
 

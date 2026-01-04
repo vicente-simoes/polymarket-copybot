@@ -28,6 +28,16 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
         return 0;
     }
 
+    // Check if this is the initial backfill (no existing trades for this leader)
+    const existingTradeCount = await prisma.trade.count({
+        where: { leaderId },
+    });
+    const isInitialBackfill = existingTradeCount === 0;
+
+    if (isInitialBackfill) {
+        logger.info({ wallet, activityCount: activities.length }, 'Initial backfill - marking trades as historical');
+    }
+
     let newTradesCount = 0;
 
     for (const activity of activities) {
@@ -53,18 +63,19 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                 },
             });
 
-            // Parse numeric values
-            const leaderPrice = parseFloat(activity.price);
-            const leaderSize = parseFloat(activity.size);
-            const leaderUsdc = parseFloat(activity.usdcSize);
+            // Use numeric values directly (API returns numbers)
+            const leaderPrice = activity.price;
+            const leaderSize = activity.size;
+            const leaderUsdc = activity.usdcSize;
 
             // Store normalized trade with FK to raw
+            // Mark as backfill if this is the initial poll for this leader
             const newTrade = await prisma.trade.create({
                 data: {
                     leaderId,
                     dedupeKey,
-                    txHash: activity.transaction_hash,
-                    tradeTs: new Date(activity.timestamp),
+                    txHash: activity.transactionHash,
+                    tradeTs: new Date(activity.timestamp * 1000),  // timestamp is in seconds
                     side: activity.side,
                     conditionId: activity.conditionId,
                     outcome: activity.outcome,
@@ -72,6 +83,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                     leaderSize,
                     leaderUsdc,
                     title: activity.title || null,
+                    isBackfill: isInitialBackfill,  // Mark as historical if initial backfill
                     rawId: rawRecord.id,
                 },
             });
@@ -80,7 +92,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
 
             logger.info({
                 wallet,
-                txHash: activity.transaction_hash,
+                txHash: activity.transactionHash,
                 side: activity.side,
                 price: leaderPrice,
                 usdc: leaderUsdc,
@@ -98,18 +110,22 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                     logger.debug({ quoteId, marketKey: mapping.marketKey }, 'Quote captured for trade');
                 }
 
-                // Generate paper intent for this trade
-                await generatePaperIntentForTrade(newTrade.id);
+                // Only generate paper intent for live trades (not backfill)
+                if (!isInitialBackfill) {
+                    await generatePaperIntentForTrade(newTrade.id);
+                }
             } else {
                 logger.warn({ conditionId: activity.conditionId, outcome: activity.outcome }, 'Mapping not found - quotes will be skipped');
-                // Still generate paper intent (will record SKIP_MISSING_MAPPING)
-                await generatePaperIntentForTrade(newTrade.id);
+                // Only generate paper intent for live trades (not backfill)
+                if (!isInitialBackfill) {
+                    await generatePaperIntentForTrade(newTrade.id);
+                }
             }
 
         } catch (error) {
             // Handle unique constraint violation (race condition between check and insert)
             if (error instanceof Error && error.message.includes('Unique constraint')) {
-                logger.debug({ wallet, activity: activity.id }, 'Trade already exists (race condition)');
+                logger.debug({ wallet, activity: activity.name }, 'Trade already exists (race condition)');
                 continue;
             }
 

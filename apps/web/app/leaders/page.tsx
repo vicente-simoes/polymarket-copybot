@@ -44,9 +44,44 @@ async function toggleLeader(id: string, enabled: boolean) {
 
 async function deleteLeader(id: string) {
     'use server';
-    await prisma.leader.delete({
-        where: { id },
+    // Delete in correct order to satisfy foreign key constraints
+    // Use a transaction to ensure atomicity
+    await prisma.$transaction(async (tx) => {
+        // 1. Get all trades for this leader
+        const trades = await tx.trade.findMany({
+            where: { leaderId: id },
+            select: { id: true },
+        });
+        const tradeIds = trades.map(t => t.id);
+
+        // 2. Delete paper fills (via paper intents)
+        if (tradeIds.length > 0) {
+            await tx.paperFill.deleteMany({
+                where: { intent: { tradeId: { in: tradeIds } } },
+            });
+
+            // 3. Delete paper intents
+            await tx.paperIntent.deleteMany({
+                where: { tradeId: { in: tradeIds } },
+            });
+        }
+
+        // 4. Delete trades (this also handles rawId relation)
+        await tx.trade.deleteMany({
+            where: { leaderId: id },
+        });
+
+        // 5. Delete trade raws
+        await tx.tradeRaw.deleteMany({
+            where: { leaderId: id },
+        });
+
+        // 6. Finally, delete the leader
+        await tx.leader.delete({
+            where: { id },
+        });
     });
+
     revalidatePath('/leaders');
 }
 

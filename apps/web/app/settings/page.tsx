@@ -1,5 +1,6 @@
 import { prisma } from '@polymarket-bot/db';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 async function getSettings() {
     let settings = await prisma.settings.findUnique({ where: { id: 1 } });
@@ -34,10 +35,17 @@ async function updateSettings(formData: FormData) {
     });
 
     revalidatePath('/settings');
+    redirect('/settings?success=true');
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage(
+    props: {
+        searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+    }
+) {
+    const searchParams = await props.searchParams;
     const settings = await getSettings();
+    const showSuccess = searchParams?.success === 'true';
 
     return (
         <div className="animate-fade-in">
@@ -45,6 +53,23 @@ export default async function SettingsPage() {
                 <h1 className="page-title">Settings</h1>
                 <p className="page-subtitle">Configure global guardrails for copy trading</p>
             </div>
+
+            {showSuccess && (
+                <div className="card mb-4" style={{
+                    backgroundColor: 'var(--success-bg)',
+                    borderColor: 'rgba(63, 185, 80, 0.3)',
+                    color: 'var(--success-text)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '1rem 1.5rem'
+                }}>
+                    <span style={{ marginRight: '0.75rem', fontSize: '1.25rem' }}>✅</span>
+                    <div>
+                        <strong>Settings saved successfully!</strong>
+                        <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>Your changes have been applied.</div>
+                    </div>
+                </div>
+            )}
 
             <form action={updateSettings}>
                 {/* Base Guardrails */}
@@ -80,7 +105,7 @@ export default async function SettingsPage() {
                             <input
                                 name="maxUsdcPerTrade"
                                 type="number"
-                                step="0.1"
+                                step="any"
                                 min="0.01"
                                 max="100"
                                 defaultValue={settings.maxUsdcPerTrade}
@@ -95,7 +120,7 @@ export default async function SettingsPage() {
                             <input
                                 name="maxUsdcPerDay"
                                 type="number"
-                                step="1"
+                                step="any"
                                 min="0.1"
                                 max="1000"
                                 defaultValue={settings.maxUsdcPerDay}
@@ -156,7 +181,7 @@ export default async function SettingsPage() {
                             <input
                                 name="sellMaxPriceMovePct"
                                 type="number"
-                                step="0.01"
+                                step="any"
                                 min="0.001"
                                 max="0.2"
                                 defaultValue={settings.sellMaxPriceMovePct}
@@ -171,7 +196,7 @@ export default async function SettingsPage() {
                             <input
                                 name="sellMaxSpread"
                                 type="number"
-                                step="0.01"
+                                step="any"
                                 min="0.001"
                                 max="0.2"
                                 defaultValue={settings.sellMaxSpread}

@@ -3,12 +3,16 @@ import Link from 'next/link';
 import { StatCard } from '../components';
 
 interface TradesPageProps {
-    searchParams: Promise<{ leader?: string }>;
+    searchParams: Promise<{ leader?: string; showHistorical?: string }>;
 }
 
-async function getTrades(leaderId?: string) {
+async function getTrades(leaderId?: string, showHistorical: boolean = false) {
     return prisma.trade.findMany({
-        where: leaderId ? { leaderId } : undefined,
+        where: {
+            ...(leaderId && { leaderId }),
+            // By default, filter out backfill/historical trades
+            ...(!showHistorical && { isBackfill: false }),
+        },
         include: {
             leader: {
                 select: { label: true, wallet: true },
@@ -32,9 +36,10 @@ async function getLeaders() {
 export default async function TradesPage({ searchParams }: TradesPageProps) {
     const params = await searchParams;
     const selectedLeaderId = params.leader;
+    const showHistorical = params.showHistorical === 'true';
 
     const [trades, leaders] = await Promise.all([
-        getTrades(selectedLeaderId),
+        getTrades(selectedLeaderId, showHistorical),
         getLeaders(),
     ]);
 
@@ -45,11 +50,11 @@ export default async function TradesPage({ searchParams }: TradesPageProps) {
                 <p className="page-subtitle">Real-time trade feed from monitored wallets</p>
             </div>
 
-            <div className="card mb-4" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="card mb-4" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Filter by Leader:</div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <Link
-                        href="/trades"
+                        href={showHistorical ? '/trades?showHistorical=true' : '/trades'}
                         className={`badge ${!selectedLeaderId ? 'badge-blue' : 'badge-gray'}`}
                         style={{ textDecoration: 'none', cursor: 'pointer' }}
                     >
@@ -58,13 +63,22 @@ export default async function TradesPage({ searchParams }: TradesPageProps) {
                     {leaders.map(l => (
                         <Link
                             key={l.id}
-                            href={`/trades?leader=${l.id}`}
+                            href={`/trades?leader=${l.id}${showHistorical ? '&showHistorical=true' : ''}`}
                             className={`badge ${selectedLeaderId === l.id ? 'badge-blue' : 'badge-gray'}`}
                             style={{ textDecoration: 'none', cursor: 'pointer' }}
                         >
                             {l.label}
                         </Link>
                     ))}
+                </div>
+                <div style={{ marginLeft: 'auto' }}>
+                    <Link
+                        href={showHistorical ? `/trades${selectedLeaderId ? `?leader=${selectedLeaderId}` : ''}` : `/trades?showHistorical=true${selectedLeaderId ? `&leader=${selectedLeaderId}` : ''}`}
+                        className={`badge ${showHistorical ? 'badge-yellow' : 'badge-gray'}`}
+                        style={{ textDecoration: 'none', cursor: 'pointer' }}
+                    >
+                        {showHistorical ? '✓ Showing Historical' : 'Show Historical'}
+                    </Link>
                 </div>
             </div>
 
@@ -121,6 +135,11 @@ export default async function TradesPage({ searchParams }: TradesPageProps) {
                                             <span className={`badge ${trade.side === 'BUY' ? 'badge-green' : 'badge-red'}`}>
                                                 {trade.side}
                                             </span>
+                                            {trade.isBackfill && (
+                                                <span className="badge badge-gray" style={{ marginLeft: '0.25rem', fontSize: '0.65rem' }}>
+                                                    Historical
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="text-right code-mono">
                                             {Number(trade.leaderPrice).toFixed(3)}
