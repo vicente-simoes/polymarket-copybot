@@ -1,8 +1,8 @@
 // Paper fill simulator - simulates whether paper intents would have filled
 import { prisma } from '@polymarket-bot/db';
 import pino from 'pino';
-import { getLatestQuote, getQuoteNearTimestamp } from './quotes';
-import { resolveMapping } from './mapping';
+import { getLatestQuote, getQuoteNearTimestamp } from './quotes.js';
+import { resolveMapping } from './mapping.js';
 
 const logger = pino({ name: 'fills' });
 

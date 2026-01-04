@@ -1,9 +1,9 @@
 // Strategy engine - single source of truth for paper and live trading decisions
 // This module contains all the logic for deciding whether to trade or skip
 
-import { NormalizedTrade, Quote, GuardrailConfig, RiskState } from './types';
-import { DecisionReason, DecisionReasons } from './reasons';
-import { getEffectiveConfig, OperationType } from './settings';
+import { NormalizedTrade, Quote, GuardrailConfig, RiskState } from './types.js';
+import { DecisionReason, DecisionReasons } from './reasons.js';
+import { getEffectiveConfig, OperationType } from './settings.js';
 
 export interface PaperIntentDecision {
     decision: 'TRADE' | 'SKIP';

@@ -2,7 +2,7 @@
 // This module handles position updates for all operation types (BUY, SELL, SPLIT, MERGE)
 
 import { prisma } from '@polymarket-bot/db';
-import { OperationType } from './settings';
+import { OperationType } from './settings.js';
 
 // Re-export for external convenience
 export { OperationType };

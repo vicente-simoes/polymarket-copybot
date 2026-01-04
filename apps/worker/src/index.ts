@@ -1,15 +1,15 @@
 // Worker entry point - trade ingestion polling loop with hardening
 import 'dotenv/config';
 import pino from 'pino';
-import { ingestAllLeaders } from './ingester';
-import { sleep } from './retry';
+import { ingestAllLeaders } from './ingester.js';
+import { sleep } from './retry.js';
 import {
     waitForDatabase,
     recordPollCycle,
     logHealthStatus,
     getHealthSummary
-} from './health';
-import { generateMissingPaperIntents } from './paper';
+} from './health.js';
+import { generateMissingPaperIntents } from './paper.js';
 
 const logger = pino({
     name: 'worker',
