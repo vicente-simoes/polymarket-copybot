@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Sidebar } from './components';
+import { MobileLayout, Sidebar } from './components';
 
 export const metadata: Metadata = {
-  title: 'Polymarket CopyBot',
-  description: 'Automated copy trading system',
+  title: 'Polymarketpy',
+  description: 'Paper copy trading system for Polymarket',
 };
 
 export default function RootLayout({
@@ -16,10 +16,9 @@ export default function RootLayout({
     <html lang="en">
       <body suppressHydrationWarning>
         <div className="layout-container">
-          <Sidebar />
-          <main className="main-content">
+          <MobileLayout sidebar={<Sidebar />}>
             {children}
-          </main>
+          </MobileLayout>
         </div>
       </body>
     </html>

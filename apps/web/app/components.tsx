@@ -1,7 +1,58 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+
+export function MobileLayout({ children, sidebar }: { children: React.ReactNode; sidebar: React.ReactNode }) {
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    // Close menu on route change
+    const pathname = usePathname();
+    useEffect(() => {
+        setMenuOpen(false);
+    }, [pathname]);
+
+    // Close menu when clicking outside
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth > 768) {
+                setMenuOpen(false);
+            }
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    return (
+        <>
+            {/* Mobile header - visible only on mobile */}
+            <header className="mobile-header">
+                <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>
+                    {menuOpen ? '✕' : '☰'}
+                </button>
+                <span style={{ fontWeight: 600 }}>📈 Polymarketpy</span>
+                <div style={{ width: '40px' }}></div> {/* Spacer for centering */}
+            </header>
+
+            {/* Overlay for mobile */}
+            <div
+                className={`mobile-overlay ${menuOpen ? 'visible' : ''}`}
+                onClick={() => setMenuOpen(false)}
+            />
+
+            {/* Sidebar with open/close state */}
+            <div className={menuOpen ? 'sidebar open' : 'sidebar'}>
+                {sidebar}
+            </div>
+
+            {/* Main content */}
+            <main className="main-content">
+                {children}
+            </main>
+        </>
+    );
+}
 
 export function Sidebar() {
     const pathname = usePathname();
@@ -18,9 +69,9 @@ export function Sidebar() {
     ];
 
     return (
-        <aside className="sidebar">
+        <>
             <div className="sidebar-brand">
-                <span>⚡</span> CopyBot
+                <span>📈</span> Polymarketpy
             </div>
             <nav>
                 {navItems.map((item) => (
@@ -35,9 +86,9 @@ export function Sidebar() {
                 ))}
             </nav>
             <div style={{ marginTop: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                v0.1.0 Alpha
+                v0.2.0
             </div>
-        </aside>
+        </>
     );
 }
 
@@ -53,10 +104,10 @@ export function StatCard({
     subtitle?: string;
 }) {
     return (
-        <div className="card animate-fade-in">
+        <div className="card">
             <div className="stat-label">{label}</div>
             <div className="stat-value" style={{ color }}>{value}</div>
-            {subtitle && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>{subtitle}</div>}
+            {subtitle && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>{subtitle}</div>}
         </div>
     );
 }
