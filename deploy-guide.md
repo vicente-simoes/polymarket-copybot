@@ -197,14 +197,29 @@ cd ../..
 
 ---
 
-## Phase 6: Build the Next.js App
+## Phase 5.5: Configure Environment Variables
 
-### Step 6.1 — Set environment variables
+Before building, you need to set up all environment variables for each component.
 
-Create production env file for the web app:
+### Step 5.5.1 — Environment Variables Reference
+
+| Variable | Component | Description | Example Value |
+|----------|-----------|-------------|---------------|
+| `DATABASE_URL` | db, web, worker | Postgres connection string | `postgresql://polymarket:polymarket@localhost:5432/polymarket` |
+| `POLL_INTERVAL_MS` | worker | How often to poll for new trades (ms) | `5000` |
+| `LEADER_FETCH_LIMIT` | worker | Max trades to fetch per leader per poll | `50` |
+| `RATIO_DEFAULT` | worker | Default copy ratio (leader $100 → you $1 = 0.01) | `0.01` |
+| `MAX_USDC_PER_TRADE` | worker | Max USDC per single trade | `2` |
+| `MAX_USDC_PER_DAY` | worker | Max USDC across all trades per day | `10` |
+| `MAX_PRICE_MOVE_PCT` | worker | Skip if price moved more than this % | `0.01` |
+| `MAX_SPREAD` | worker | Skip if spread exceeds this (in USDC) | `0.02` |
+| `PAPER_MODE` | worker | Enable paper trading mode | `true` |
+| `LIVE_TRADING_ENABLED` | worker | Enable live trading (keep `false`!) | `false` |
+
+### Step 5.5.2 — Create Prisma/DB environment file
 
 ```bash
-nano apps/web/.env.local
+nano ~/apps/polymarket-bot/packages/db/.env
 ```
 
 Add:
@@ -213,6 +228,74 @@ DATABASE_URL="postgresql://polymarket:polymarket@localhost:5432/polymarket"
 ```
 
 Save: `Ctrl+O`, Enter, `Ctrl+X`
+
+### Step 5.5.3 — Create Next.js (web) environment file
+
+```bash
+nano ~/apps/polymarket-bot/apps/web/.env.local
+```
+
+Add:
+```env
+DATABASE_URL="postgresql://polymarket:polymarket@localhost:5432/polymarket"
+```
+
+Save: `Ctrl+O`, Enter, `Ctrl+X`
+
+### Step 5.5.4 — Create Worker environment file
+
+```bash
+nano ~/apps/polymarket-bot/apps/worker/.env
+```
+
+Add:
+```env
+# Database
+DATABASE_URL="postgresql://polymarket:polymarket@localhost:5432/polymarket"
+
+# Polling configuration
+POLL_INTERVAL_MS=5000
+LEADER_FETCH_LIMIT=50
+
+# Copy trading configuration
+RATIO_DEFAULT=0.01
+
+# Guardrails (safety limits)
+MAX_USDC_PER_TRADE=2
+MAX_USDC_PER_DAY=10
+MAX_PRICE_MOVE_PCT=0.01
+MAX_SPREAD=0.02
+
+# Mode flags (NEVER set LIVE_TRADING_ENABLED=true until paper results are proven)
+PAPER_MODE=true
+LIVE_TRADING_ENABLED=false
+```
+
+Save: `Ctrl+O`, Enter, `Ctrl+X`
+
+### Step 5.5.5 — Verify all env files exist
+
+```bash
+ls -la ~/apps/polymarket-bot/packages/db/.env
+ls -la ~/apps/polymarket-bot/apps/web/.env.local
+ls -la ~/apps/polymarket-bot/apps/worker/.env
+```
+
+All three files should exist.
+
+---
+
+## Phase 6: Build the Next.js App
+
+### Step 6.1 — Verify environment file exists
+
+The `.env.local` file was created in Phase 5.5. Verify it exists:
+
+```bash
+cat ~/apps/polymarket-bot/apps/web/.env.local
+```
+
+You should see the `DATABASE_URL` variable.
 
 ### Step 6.2 — Build for production
 
@@ -254,22 +337,15 @@ WantedBy=multi-user.target
 
 Save and exit.
 
-### Step 7.2 — Create worker environment file
+### Step 7.2 — Verify worker environment file exists
+
+The `.env` file was created in Phase 5.5. Verify it exists:
 
 ```bash
-nano ~/apps/polymarket-bot/apps/worker/.env
+cat ~/apps/polymarket-bot/apps/worker/.env
 ```
 
-Add:
-```env
-DATABASE_URL="postgresql://polymarket:polymarket@localhost:5432/polymarket"
-POLL_INTERVAL_MS=5000
-LEADER_FETCH_LIMIT=50
-RATIO_DEFAULT=0.01
-MAX_USDC_PER_TRADE=2
-MAX_USDC_PER_DAY=10
-PAPER_MODE=true
-```
+You should see all the worker configuration variables.
 
 ### Step 7.3 — Create the web service
 
