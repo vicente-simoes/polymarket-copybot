@@ -77,11 +77,23 @@ async function runPollLoop(): Promise<void> {
         // Periodic P&L snapshot for historical charts
         if (now - lastPnlSnapshot >= PNL_SNAPSHOT_INTERVAL) {
             try {
-                const { recordPnlSnapshot } = await import('@polymarket-bot/core');
+                const { recordPnlSnapshot, checkMarketResolutions } = await import('@polymarket-bot/core');
+
+                // Record P&L snapshot
                 await recordPnlSnapshot();
                 logger.info('P&L snapshot recorded');
+
+                // Check for market resolutions
+                const resolutionResult = await checkMarketResolutions();
+                if (resolutionResult.positionsResolved > 0) {
+                    logger.info({
+                        positionsChecked: resolutionResult.positionsChecked,
+                        positionsResolved: resolutionResult.positionsResolved,
+                        totalRealizedPnl: resolutionResult.totalRealizedPnl,
+                    }, 'Market resolutions processed');
+                }
             } catch (error) {
-                logger.error({ error }, 'Failed to record P&L snapshot');
+                logger.error({ error }, 'Failed to record P&L snapshot or check resolutions');
             }
             lastPnlSnapshot = now;
         }

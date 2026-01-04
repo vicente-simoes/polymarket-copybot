@@ -328,7 +328,7 @@ model Leader {
 - [x] All operation types (BUY/SELL/SPLIT/MERGE) handled
 - [x] `/pnl` page shows open positions with unrealized P&L
 - [x] P&L graph shows history with time range selector
-- [ ] When market resolves, realized P&L is calculated
+- [x] When market resolves, realized P&L is calculated
 - [x] Summary shows total P&L across all positions
 
 ---

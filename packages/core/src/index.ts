@@ -7,3 +7,4 @@ export * from './strategy';
 export * from './validation';
 export * from './settings';
 export * from './positions';
+export * from './resolutions';
