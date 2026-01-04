@@ -87,7 +87,7 @@ export default async function LeadersPage() {
                         <label className="stat-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Label</label>
                         <input name="label" placeholder="e.g. Top Trader 1" className="input-field" required />
                     </div>
-                    <div style={{ flex: 2, minWidth: '300px' }}>
+                    <div style={{ flex: 10, minWidth: '250px' }}>
                         <label className="stat-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Wallet Address</label>
                         <input name="wallet" placeholder="0x..." className="input-field code-mono" required pattern="^0x[a-fA-F0-9]{40}$" />
                     </div>

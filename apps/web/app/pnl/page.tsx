@@ -115,9 +115,9 @@ export default function PnLPage() {
 
             {/* P&L Chart */}
             <div className="card mb-4">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <h3>P&L Over Time</h3>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                         {(['24h', '7d', '30d', 'all'] as const).map(r => (
                             <button
                                 key={r}
