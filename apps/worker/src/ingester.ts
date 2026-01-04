@@ -49,7 +49,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                 data: {
                     leaderId,
                     source: 'data-api/activity',
-                    payload: activity as unknown as Record<string, unknown>,
+                    payload: activity as any,
                 },
             });
 

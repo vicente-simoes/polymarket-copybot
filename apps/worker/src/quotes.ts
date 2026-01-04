@@ -105,7 +105,7 @@ export async function captureQuote(mapping: MarketMapping): Promise<string | nul
         const rawQuote = await prisma.quoteRaw.create({
             data: {
                 marketKey: mapping.marketKey,
-                payload: quoteData.rawPayload as unknown as Record<string, unknown>,
+                payload: quoteData.rawPayload as any,
             },
         });
 
