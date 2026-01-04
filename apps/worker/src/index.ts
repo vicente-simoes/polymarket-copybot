@@ -22,9 +22,11 @@ const logger = pino({
 
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000', 10);
 const HEALTH_LOG_INTERVAL = parseInt(process.env.HEALTH_LOG_INTERVAL || '60000', 10); // 1 minute
+const PNL_SNAPSHOT_INTERVAL = parseInt(process.env.PNL_SNAPSHOT_INTERVAL || '3600000', 10); // 1 hour
 
 let isRunning = true;
 let lastHealthLog = 0;
+let lastPnlSnapshot = 0;
 
 /**
  * Main polling loop with hardening
@@ -33,6 +35,7 @@ async function runPollLoop(): Promise<void> {
     logger.info({
         pollIntervalMs: POLL_INTERVAL_MS,
         healthLogIntervalMs: HEALTH_LOG_INTERVAL,
+        pnlSnapshotIntervalMs: PNL_SNAPSHOT_INTERVAL,
     }, 'Worker starting...');
 
     // Wait for database to be available
@@ -69,6 +72,18 @@ async function runPollLoop(): Promise<void> {
         if (now - lastHealthLog >= HEALTH_LOG_INTERVAL) {
             logHealthStatus();
             lastHealthLog = now;
+        }
+
+        // Periodic P&L snapshot for historical charts
+        if (now - lastPnlSnapshot >= PNL_SNAPSHOT_INTERVAL) {
+            try {
+                const { recordPnlSnapshot } = await import('@polymarket-bot/core');
+                await recordPnlSnapshot();
+                logger.info('P&L snapshot recorded');
+            } catch (error) {
+                logger.error({ error }, 'Failed to record P&L snapshot');
+            }
+            lastPnlSnapshot = now;
         }
 
         // Wait for next poll interval with jitter to avoid thundering herd

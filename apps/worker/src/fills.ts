@@ -145,6 +145,20 @@ export async function simulateFillForIntent(intentId: string): Promise<string | 
         },
     });
 
+    // Update position tracking for P&L if filled
+    if (filled && fillPrice !== null) {
+        const { updatePosition } = await import('@polymarket-bot/core');
+        await updatePosition({
+            marketKey: mapping.marketKey,
+            conditionId: trade.conditionId,
+            outcome: trade.outcome,
+            title: trade.title ?? undefined,
+            operationType: side as 'BUY' | 'SELL' | 'SPLIT' | 'MERGE',
+            shares: Number(intent.yourUsdcTarget) / fillPrice, // Calculate shares from USDC target
+            price: fillPrice,
+        });
+    }
+
     logger.info({
         intentId,
         side,

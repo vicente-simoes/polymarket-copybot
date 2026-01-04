@@ -11,6 +11,30 @@ datasource db {
 }
 
 // ============================================================================
+// Settings - Global guardrails controlled via dashboard
+// ============================================================================
+model Settings {
+  id                      Int      @id @default(1)
+  
+  // Base guardrails
+  ratioDefault            Float    @default(0.01)
+  maxUsdcPerTrade         Float    @default(2)
+  maxUsdcPerDay           Float    @default(10)
+  maxPriceMovePct         Float    @default(0.01)
+  maxSpread               Float    @default(0.02)
+  
+  // Operation-specific modifiers
+  sellMaxPriceMovePct     Float    @default(0.05)  // 5x more lenient for SELL
+  sellMaxSpread           Float    @default(0.10)  // 5x more lenient for SELL
+  sellAlwaysAttempt       Boolean  @default(true)  // Never skip SELL for price/spread
+  splitMergeAlwaysFollow  Boolean  @default(true)  // Always follow SPLIT/MERGE
+  
+  updatedAt               DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// ============================================================================
 // Leaders - Wallets being tracked for copy-trading
 // ============================================================================
 model Leader {
@@ -19,6 +43,11 @@ model Leader {
   wallet    String   @unique // lowercase 0x...
   enabled   Boolean  @default(true)
   createdAt DateTime @default(now())
+
+  // Per-leader overrides (null = use global settings)
+  ratio           Float?
+  maxUsdcPerTrade Float?
+  maxUsdcPerDay   Float?
 
   tradeRaws TradeRaw[]
   trades    Trade[]
@@ -85,6 +114,8 @@ model Trade {
 enum TradeSide {
   BUY
   SELL
+  SPLIT
+  MERGE
 }
 
 // ============================================================================
@@ -166,3 +197,59 @@ model PaperFill {
 
   @@map("paper_fills")
 }
+
+// ============================================================================
+// Positions - Track accumulated shares per market for P&L
+// ============================================================================
+model Position {
+  id             String   @id @default(uuid())
+  marketKey      String
+  conditionId    String
+  outcome        String
+  title          String?
+  shares         Float    @default(0)
+  avgEntryPrice  Float    @default(0)
+  totalCostBasis Float    @default(0)
+  isClosed       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  resolutions    Resolution[]
+
+  @@unique([marketKey, outcome])
+  @@index([isClosed])
+  @@map("positions")
+}
+
+// ============================================================================
+// Resolutions - Record when positions are closed (market resolved or sold)
+// ============================================================================
+model Resolution {
+  id              String   @id @default(uuid())
+  positionId      String
+  position        Position @relation(fields: [positionId], references: [id])
+  resolvedOutcome String   // e.g., YES, NO, MANUAL_CLOSE
+  resolutionPrice Float
+  realizedPnl     Float
+  resolvedAt      DateTime @default(now())
+
+  @@index([positionId])
+  @@map("resolutions")
+}
+
+// ============================================================================
+// P&L Snapshots - Historical P&L data for graphing
+// ============================================================================
+model PnlSnapshot {
+  id              String   @id @default(uuid())
+  timestamp       DateTime @default(now())
+  totalCostBasis  Float
+  unrealizedPnl   Float
+  realizedPnl     Float
+  totalPnl        Float
+  positionCount   Int
+
+  @@index([timestamp])
+  @@map("pnl_snapshots")
+}
+

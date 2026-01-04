@@ -1,10 +1,8 @@
 // Paper intent generator - creates paper trading intents using strategy engine
 import { prisma } from '@polymarket-bot/db';
 import {
-    decidePaperIntent,
+    decidePaperIntentAsync,
     DecisionReasons,
-    DEFAULT_GUARDRAIL_CONFIG,
-    type GuardrailConfig,
     type NormalizedTrade,
     type Quote,
     type RiskState,
@@ -38,19 +36,10 @@ function checkAndResetDailyRisk(): void {
 }
 
 /**
- * Get guardrail config - can be extended to load from DB/env
+ * Get guardrail config - now primarily from DB, ratio fallback to env
  */
-function getGuardrailConfig(): GuardrailConfig {
-    // Use defaults, but could be overridden from env or DB
-    return {
-        ...DEFAULT_GUARDRAIL_CONFIG,
-        ratio: parseFloat(process.env.COPY_RATIO || '0.01'),
-        minUsdcPerTrade: parseFloat(process.env.MIN_USDC_PER_TRADE || '1'),
-        maxUsdcPerTrade: parseFloat(process.env.MAX_USDC_PER_TRADE || '100'),
-        maxUsdcPerDay: parseFloat(process.env.MAX_USDC_PER_DAY || '1000'),
-        maxSpread: parseFloat(process.env.MAX_SPREAD || '0.05'),
-        maxPriceMovePct: parseFloat(process.env.MAX_PRICE_MOVE || '0.05'),
-    };
+function getLegacyRatio(): number {
+    return parseFloat(process.env.COPY_RATIO || '0.01');
 }
 
 /**
@@ -81,9 +70,6 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         return existingIntent.id;
     }
 
-    // Get config
-    const config = getGuardrailConfig();
-
     // Resolve mapping
     const mapping = await resolveMapping(trade.conditionId, trade.outcome);
     if (!mapping) {
@@ -91,12 +77,12 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         const intent = await prisma.paperIntent.create({
             data: {
                 tradeId: trade.id,
-                ratio: config.ratio,
+                ratio: getLegacyRatio(),
                 decision: 'SKIP',
                 decisionReason: DecisionReasons.SKIP_MISSING_MAPPING,
                 yourUsdcTarget: 0,
                 limitPrice: Number(trade.leaderPrice),
-                yourSide: trade.side as 'BUY' | 'SELL',
+                yourSide: trade.side as 'BUY' | 'SELL' | 'SPLIT' | 'MERGE',
             },
         });
 
@@ -115,7 +101,7 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         txHash: trade.txHash,
         tradeTs: trade.tradeTs,
         detectedAt: trade.detectedAt,
-        side: trade.side as 'BUY' | 'SELL',
+        side: trade.side as 'BUY' | 'SELL' | 'SPLIT' | 'MERGE',
         conditionId: trade.conditionId,
         outcome: trade.outcome,
         leaderPrice: Number(trade.leaderPrice),
@@ -137,24 +123,27 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         rawId: quoteRecord.rawId,
     } : null;
 
-    // Run strategy engine
-    const decision = decidePaperIntent({
+    // Run strategy engine with DB-based config
+    const decision = await decidePaperIntentAsync({
         trade: normalizedTrade,
         quote,
-        config,
+        leaderId: trade.leaderId,
         riskState: currentRiskState,
     });
+
+    // Get the ratio used (for logging/tracking)
+    const ratio = getLegacyRatio();
 
     // Create paper intent record
     const intent = await prisma.paperIntent.create({
         data: {
             tradeId: trade.id,
-            ratio: config.ratio,
+            ratio: ratio,
             decision: decision.decision,
             decisionReason: decision.decisionReason,
             yourUsdcTarget: decision.yourUsdcTarget || 0,
             limitPrice: decision.limitPrice || Number(trade.leaderPrice),
-            yourSide: trade.side as 'BUY' | 'SELL',
+            yourSide: trade.side as 'BUY' | 'SELL' | 'SPLIT' | 'MERGE',
         },
     });
 

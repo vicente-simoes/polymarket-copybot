@@ -8,6 +8,7 @@
         "build": "tsc"
     },
     "dependencies": {
-        "zod": "^4.3.4"
+        "zod": "^4.3.4",
+        "@polymarket-bot/db": "workspace:*"
     }
 }

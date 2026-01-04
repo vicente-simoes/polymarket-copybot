@@ -4,6 +4,7 @@
 export const DecisionReasons = {
     // Trade decisions
     TRADE_OK: 'TRADE_OK',
+    OPERATION_ALWAYS_FOLLOW: 'OPERATION_ALWAYS_FOLLOW', // SELL/SPLIT/MERGE always followed
 
     // Skip decisions
     SKIP_PRICE_MOVED: 'SKIP_PRICE_MOVED',

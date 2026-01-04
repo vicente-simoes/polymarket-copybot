@@ -15,7 +15,7 @@ export interface NormalizedTrade {
     txHash: string;
     tradeTs: Date;
     detectedAt: Date;
-    side: 'BUY' | 'SELL';
+    side: 'BUY' | 'SELL' | 'SPLIT' | 'MERGE';
     conditionId: string;
     outcome: string;
     leaderPrice: number;
@@ -50,7 +50,7 @@ export interface PaperIntent {
     tradeId: string;
     ratio: number;
     yourUsdcTarget: number;
-    yourSide: 'BUY' | 'SELL';
+    yourSide: 'BUY' | 'SELL' | 'SPLIT' | 'MERGE';
     limitPrice: number;
     decision: 'TRADE' | 'SKIP';
     decisionReason: string;

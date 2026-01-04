@@ -11,7 +11,9 @@ export function Sidebar() {
         { href: '/trades', label: 'Trades', icon: '📈' },
         { href: '/leaders', label: 'Leaders', icon: '👥' },
         { href: '/paper', label: 'Paper Trading', icon: '📝' },
+        { href: '/pnl', label: 'P&L', icon: '💰' },
         { href: '/metrics', label: 'Metrics', icon: '📉' },
+        { href: '/settings', label: 'Settings', icon: '⚙️' },
         { href: '/debug', label: 'Debug', icon: '🔍' },
     ];
 

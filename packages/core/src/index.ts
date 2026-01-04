@@ -5,4 +5,5 @@ export * from './types';
 export * from './reasons';
 export * from './strategy';
 export * from './validation';
-
+export * from './settings';
+export * from './positions';
