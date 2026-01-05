@@ -10,9 +10,10 @@ out/
 
 # Environment files (contain secrets)
 .env
+!apps/web/.env
 .env.local
 .env.*.local
-apps/web/.env.local
+# apps/web/.env.local
 apps/worker/.env
 packages/db/.env
 

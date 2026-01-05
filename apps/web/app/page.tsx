@@ -1,87 +1,101 @@
-import { prisma } from '@polymarket-bot/db';
-import { StatCard } from './components';
+import { prisma } from '@polymarket-bot/db'
+import { PageLayout, StatCard } from '@/components/page-layout'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { LayoutDashboard, Users, TrendingUp, FileText, Activity, Clock } from 'lucide-react'
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
 
 async function getStats() {
   const [leaderCount, tradeCount, paperIntentCount] = await Promise.all([
     prisma.leader.count({ where: { enabled: true } }),
     prisma.trade.count(),
     prisma.paperIntent.count(),
-  ]);
+  ])
 
-  return { leaderCount, tradeCount, paperIntentCount };
+  return { leaderCount, tradeCount, paperIntentCount }
 }
 
 async function checkDbConnection() {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    return true;
-  } catch (e) {
-    return false;
+    await prisma.$queryRaw`SELECT 1`
+    return true
+  } catch {
+    return false
   }
 }
 
 export default async function DashboardPage() {
-  const isConnected = await checkDbConnection();
-  const stats = await getStats();
+  const isConnected = await checkDbConnection()
+  const stats = await getStats()
 
   return (
-    <div className="animate-fade-in">
-      <div className="page-header">
-        <h1 className="page-title">Dashboard Overview</h1>
-        <p className="page-subtitle">Welcome to your copy trading control center</p>
+    <PageLayout
+      title="Dashboard Overview"
+      description="Welcome to your copy trading control center"
+      icon={LayoutDashboard}
+    >
+      {/* Status Badge */}
+      <div>
+        <Badge variant={isConnected ? "success" : "destructive"}>
+          <span className="size-2 rounded-full bg-current mr-2" />
+          Database: {isConnected ? 'Connected' : 'Not Connected'}
+        </Badge>
       </div>
 
-      <div className="mb-4">
-        {isConnected ? (
-          <div className="badge badge-green">
-            Database: Connected
-          </div>
-        ) : (
-          <div className="badge badge-red">
-            Database: Not Connected
-          </div>
-        )}
-      </div>
-
-      <div className="grid-cols-3">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
           label="Active Leaders"
           value={stats.leaderCount}
-          color="var(--accent-secondary)"
-          subtitle="Monitored for trades"
+          description="Monitored for trades"
+          icon={Users}
         />
         <StatCard
           label="Total Trades"
           value={stats.tradeCount}
-          color="var(--text-primary)"
-          subtitle="Ingested from API"
+          description="Ingested from API"
+          icon={TrendingUp}
         />
         <StatCard
           label="Paper Intents"
           value={stats.paperIntentCount}
-          color="var(--accent-primary)"
-          subtitle="Simulated decisions"
+          description="Simulated decisions"
+          icon={FileText}
         />
       </div>
 
-      <div className="mt-4 card">
-        <h3 style={{ marginBottom: '1rem' }}>System Status</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-          <div>
-            <div className="stat-label">Worker Status</div>
-            <div style={{ marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#3fb950', display: 'block' }}></span>
-              Running
+      {/* System Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="size-4" />
+            System Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                Worker Status
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="size-2 rounded-full bg-success" />
+                <span className="font-medium">Running</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                Last Update
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="size-4 text-muted-foreground" />
+                <span className="font-mono text-sm">{new Date().toLocaleTimeString()}</span>
+              </div>
             </div>
           </div>
-          <div>
-            <div className="stat-label">Last Update</div>
-            <div style={{ marginTop: '0.25rem' }}>{new Date().toLocaleTimeString()}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+        </CardContent>
+      </Card>
+    </PageLayout>
+  )
 }

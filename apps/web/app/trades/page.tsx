@@ -1,16 +1,27 @@
-import { prisma } from '@polymarket-bot/db';
-import Link from 'next/link';
-import { StatCard } from '../components';
+import { prisma } from '@polymarket-bot/db'
+import Link from 'next/link'
+import { PageLayout, StatCard } from '@/components/page-layout'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table'
+import { TrendingUp, ExternalLink } from 'lucide-react'
 
 interface TradesPageProps {
-    searchParams: Promise<{ leader?: string; showHistorical?: string }>;
+    searchParams: Promise<{ leader?: string; showHistorical?: string }>
 }
 
 async function getTrades(leaderId?: string, showHistorical: boolean = false) {
     return prisma.trade.findMany({
         where: {
             ...(leaderId && { leaderId }),
-            // By default, filter out backfill/historical trades
             ...(!showHistorical && { isBackfill: false }),
         },
         include: {
@@ -18,159 +29,174 @@ async function getTrades(leaderId?: string, showHistorical: boolean = false) {
                 select: { label: true, wallet: true },
             },
             paperIntents: {
-                select: { id: true }, // just check existence
+                select: { id: true },
             },
         },
         orderBy: { tradeTs: 'desc' },
         take: 100,
-    });
+    })
 }
 
 async function getLeaders() {
     return prisma.leader.findMany({
         select: { id: true, label: true },
         orderBy: { label: 'asc' },
-    });
+    })
 }
 
 export default async function TradesPage({ searchParams }: TradesPageProps) {
-    const params = await searchParams;
-    const selectedLeaderId = params.leader;
-    const showHistorical = params.showHistorical === 'true';
+    const params = await searchParams
+    const selectedLeaderId = params.leader
+    const showHistorical = params.showHistorical === 'true'
 
     const [trades, leaders] = await Promise.all([
         getTrades(selectedLeaderId, showHistorical),
         getLeaders(),
-    ]);
+    ])
 
     return (
-        <div className="animate-fade-in">
-            <div className="page-header">
-                <h1 className="page-title">Trade Ingestion</h1>
-                <p className="page-subtitle">Real-time trade feed from monitored wallets</p>
-            </div>
+        <PageLayout
+            title="Trade Ingestion"
+            description="Real-time trade feed from monitored wallets"
+            icon={TrendingUp}
+        >
+            {/* Filter Bar */}
+            <Card>
+                <CardContent className="p-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-sm font-medium text-muted-foreground">Filter:</span>
+                        <div className="flex flex-wrap gap-2">
+                            <Link href={showHistorical ? '/trades?showHistorical=true' : '/trades'}>
+                                <Badge variant={!selectedLeaderId ? 'default' : 'muted'} className="cursor-pointer">
+                                    All
+                                </Badge>
+                            </Link>
+                            {leaders.map(l => (
+                                <Link
+                                    key={l.id}
+                                    href={`/trades?leader=${l.id}${showHistorical ? '&showHistorical=true' : ''}`}
+                                >
+                                    <Badge
+                                        variant={selectedLeaderId === l.id ? 'default' : 'muted'}
+                                        className="cursor-pointer"
+                                    >
+                                        {l.label}
+                                    </Badge>
+                                </Link>
+                            ))}
+                        </div>
+                        <div className="ml-auto">
+                            <Link
+                                href={showHistorical
+                                    ? `/trades${selectedLeaderId ? `?leader=${selectedLeaderId}` : ''}`
+                                    : `/trades?showHistorical=true${selectedLeaderId ? `&leader=${selectedLeaderId}` : ''}`
+                                }
+                            >
+                                <Badge variant={showHistorical ? 'warning' : 'muted'} className="cursor-pointer">
+                                    {showHistorical ? '✓ Showing Historical' : 'Show Historical'}
+                                </Badge>
+                            </Link>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
 
-            <div className="card mb-4" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>Filter by Leader:</div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <Link
-                        href={showHistorical ? '/trades?showHistorical=true' : '/trades'}
-                        className={`badge ${!selectedLeaderId ? 'badge-blue' : 'badge-gray'}`}
-                        style={{ textDecoration: 'none', cursor: 'pointer' }}
-                    >
-                        All
-                    </Link>
-                    {leaders.map(l => (
-                        <Link
-                            key={l.id}
-                            href={`/trades?leader=${l.id}${showHistorical ? '&showHistorical=true' : ''}`}
-                            className={`badge ${selectedLeaderId === l.id ? 'badge-blue' : 'badge-gray'}`}
-                            style={{ textDecoration: 'none', cursor: 'pointer' }}
-                        >
-                            {l.label}
-                        </Link>
-                    ))}
-                </div>
-                <div style={{ marginLeft: 'auto' }}>
-                    <Link
-                        href={showHistorical ? `/trades${selectedLeaderId ? `?leader=${selectedLeaderId}` : ''}` : `/trades?showHistorical=true${selectedLeaderId ? `&leader=${selectedLeaderId}` : ''}`}
-                        className={`badge ${showHistorical ? 'badge-yellow' : 'badge-gray'}`}
-                        style={{ textDecoration: 'none', cursor: 'pointer' }}
-                    >
-                        {showHistorical ? '✓ Showing Historical' : 'Show Historical'}
-                    </Link>
-                </div>
-            </div>
+            {/* Trades Table */}
+            <Card>
+                <CardContent className="p-0">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Time</TableHead>
+                                <TableHead>Leader</TableHead>
+                                <TableHead className="max-w-[200px]">Market</TableHead>
+                                <TableHead>Side</TableHead>
+                                <TableHead className="text-right">Price</TableHead>
+                                <TableHead className="text-right">USDC</TableHead>
+                                <TableHead className="text-right">Size</TableHead>
+                                <TableHead className="text-right">Latency</TableHead>
+                                <TableHead className="text-right">Tx</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {trades.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                                        No trades found.
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                trades.map(trade => {
+                                    const latency = trade.detectedAt.getTime() - trade.tradeTs.getTime()
+                                    const latencyVariant = latency < 2000 ? 'success' : latency < 5000 ? 'warning' : 'destructive'
 
-            <div className="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Leader</th>
-                            <th>Market</th>
-                            <th>Side</th>
-                            <th className="text-right">Price</th>
-                            <th className="text-right">USDC</th>
-                            <th className="text-right">Size</th>
-                            <th className="text-right">Latency</th>
-                            <th className="text-right">Tx</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {trades.length === 0 ? (
-                            <tr>
-                                <td colSpan={9} className="text-center" style={{ padding: '3rem', color: 'var(--text-muted)' }}>
-                                    No trades found.
-                                </td>
-                            </tr>
-                        ) : (
-                            trades.map(trade => {
-                                const latency = trade.detectedAt.getTime() - trade.tradeTs.getTime();
-                                const latencyColor = latency < 2000 ? 'var(--success-text)' : latency < 5000 ? 'var(--warn-text)' : 'var(--error-text)';
-
-                                return (
-                                    <tr key={trade.id}>
-                                        <td>
-                                            <div>{new Date(trade.tradeTs).toLocaleTimeString()}</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                {new Date(trade.tradeTs).toLocaleDateString()}
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div style={{ fontWeight: 500 }}>{trade.leader.label}</div>
-                                            <div className="code-mono" style={{ fontSize: '0.75rem' }}>
-                                                {trade.leader.wallet.substring(0, 6)}...
-                                            </div>
-                                        </td>
-                                        <td style={{ maxWidth: '300px' }}>
-                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={trade.title || ''}>
-                                                {trade.title || 'Unknown Market'}
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                {trade.outcome}
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <span className={`badge ${trade.side === 'BUY' ? 'badge-green' : 'badge-red'}`}>
-                                                {trade.side}
-                                            </span>
-                                            {trade.isBackfill && (
-                                                <span className="badge badge-gray" style={{ marginLeft: '0.25rem', fontSize: '0.65rem' }}>
-                                                    Historical
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="text-right code-mono">
-                                            {Number(trade.leaderPrice).toFixed(3)}
-                                        </td>
-                                        <td className="text-right code-mono" style={{ fontWeight: 600 }}>
-                                            ${Number(trade.leaderUsdc).toFixed(2)}
-                                        </td>
-                                        <td className="text-right code-mono" style={{ color: 'var(--text-muted)' }}>
-                                            {Number(trade.leaderSize).toFixed(1)}
-                                        </td>
-                                        <td className="text-right" style={{ color: latencyColor, fontWeight: 500 }}>
-                                            {latency}ms
-                                        </td>
-                                        <td className="text-right">
-                                            <a
-                                                href={`https://polygonscan.com/tx/${trade.txHash}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="badge badge-gray"
-                                                style={{ textDecoration: 'none' }}
-                                            >
-                                                Scan ↗
-                                            </a>
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
+                                    return (
+                                        <TableRow key={trade.id}>
+                                            <TableCell>
+                                                <div className="font-mono text-sm">
+                                                    {new Date(trade.tradeTs).toLocaleTimeString()}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {new Date(trade.tradeTs).toLocaleDateString()}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="font-medium">{trade.leader.label}</div>
+                                                <div className="text-xs text-muted-foreground font-mono">
+                                                    {trade.leader.wallet.substring(0, 6)}...
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="max-w-[200px]">
+                                                <div className="truncate" title={trade.title || ''}>
+                                                    {trade.title || 'Unknown Market'}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {trade.outcome}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-1">
+                                                    <Badge variant={trade.side === 'BUY' ? 'success' : 'destructive'}>
+                                                        {trade.side}
+                                                    </Badge>
+                                                    {trade.isBackfill && (
+                                                        <Badge variant="muted" className="text-[10px]">Historical</Badge>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right font-mono">
+                                                {Number(trade.leaderPrice).toFixed(3)}
+                                            </TableCell>
+                                            <TableCell className="text-right font-mono font-semibold">
+                                                ${Number(trade.leaderUsdc).toFixed(2)}
+                                            </TableCell>
+                                            <TableCell className="text-right font-mono text-muted-foreground">
+                                                {Number(trade.leaderSize).toFixed(1)}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <Badge variant={latencyVariant} className="font-mono">
+                                                    {latency}ms
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <a
+                                                    href={`https://polygonscan.com/tx/${trade.txHash}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                >
+                                                    <Button variant="ghost" size="sm" className="h-7 px-2">
+                                                        <ExternalLink className="size-3" />
+                                                    </Button>
+                                                </a>
+                                            </TableCell>
+                                        </TableRow>
+                                    )
+                                })
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+        </PageLayout>
+    )
 }
