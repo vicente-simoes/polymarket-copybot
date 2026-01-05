@@ -61,7 +61,7 @@ cd ../..
 # Build Web Dashboard
 cd apps/web
 # Note: creating a production build requires next build
-npx next build
+npx next build --webpack
 cd ../..
 ```
 
@@ -98,7 +98,7 @@ git pull origin main && \
 pnpm install && \
 (cd packages/core && pnpm build) && \
 (cd apps/worker && pnpm build) && \
-(cd apps/web && npx next build) && \
+(cd apps/web && npx next build --webpack) && \
 sudo systemctl restart polymarket-worker polymarket-web && \
 sudo journalctl -u polymarket-worker -f
 ```
