@@ -172,7 +172,7 @@ export default function PnLPage() {
                                             borderRadius: '6px',
                                         }}
                                         labelStyle={{ color: 'hsl(var(--foreground))' }}
-                                        formatter={(value: number) => [`$${value.toFixed(2)}`, 'P&L']}
+                                        formatter={(value: number | undefined) => [value != null ? `$${value.toFixed(2)}` : '$0.00', 'P&L']}
                                         labelFormatter={(label) => new Date(label).toLocaleString()}
                                     />
                                     <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
