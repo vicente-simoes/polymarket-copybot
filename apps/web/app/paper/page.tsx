@@ -14,45 +14,84 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { FileText, Filter, X } from 'lucide-react'
+import { FileText, Filter, X, ChevronRight } from 'lucide-react'
+
+const PAGE_SIZE = 50
 
 interface PaperPageProps {
     searchParams: Promise<{
         leader?: string
         decision?: string
         filled?: string
+        page?: string
     }>
 }
 
+// Get stats for ALL non-backfill paper intents (not filtered, not paginated)
+async function getGlobalStats() {
+    const allIntents = await prisma.paperIntent.findMany({
+        where: {
+            trade: {
+                isBackfill: false,
+            },
+        },
+        select: {
+            decision: true,
+            paperFill: {
+                select: { filled: true },
+            },
+        },
+    })
+
+    return {
+        total: allIntents.length,
+        trades: allIntents.filter(i => i.decision === 'TRADE').length,
+        skips: allIntents.filter(i => i.decision === 'SKIP').length,
+        filled: allIntents.filter(i => i.paperFill?.filled).length,
+        notFilled: allIntents.filter(i => i.paperFill && !i.paperFill.filled).length,
+    }
+}
+
+// Get paginated paper intents for display (with filters applied)
 async function getPaperIntents(filters: {
     leader?: string
     decision?: string
     filled?: string
-}) {
-    return prisma.paperIntent.findMany({
-        where: {
-            trade: {
-                isBackfill: false,
-                ...(filters.leader && { leaderId: filters.leader }),
-            },
-            ...(filters.decision && { decision: filters.decision as 'TRADE' | 'SKIP' }),
-            ...(filters.filled !== undefined && filters.filled !== '' && {
-                paperFill: {
-                    filled: filters.filled === 'true',
-                },
-            }),
+}, page: number = 1) {
+    const skip = (page - 1) * PAGE_SIZE
+
+    const where = {
+        trade: {
+            isBackfill: false,
+            ...(filters.leader && { leaderId: filters.leader }),
         },
-        include: {
-            trade: {
-                include: {
-                    leader: { select: { label: true } },
-                },
+        ...(filters.decision && { decision: filters.decision as 'TRADE' | 'SKIP' }),
+        ...(filters.filled !== undefined && filters.filled !== '' && {
+            paperFill: {
+                filled: filters.filled === 'true',
             },
-            paperFill: true,
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-    })
+        }),
+    }
+
+    const [intents, totalCount] = await Promise.all([
+        prisma.paperIntent.findMany({
+            where,
+            include: {
+                trade: {
+                    include: {
+                        leader: { select: { label: true } },
+                    },
+                },
+                paperFill: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: PAGE_SIZE,
+        }),
+        prisma.paperIntent.count({ where }),
+    ])
+
+    return { intents, totalCount, hasMore: skip + intents.length < totalCount }
 }
 
 async function getLeadersForFilter() {
@@ -64,19 +103,26 @@ async function getLeadersForFilter() {
 
 export default async function PaperPage({ searchParams }: PaperPageProps) {
     const params = await searchParams
+    const currentPage = Math.max(1, parseInt(params.page || '1', 10))
 
-    const [intents, leaders] = await Promise.all([
-        getPaperIntents(params),
+    const [stats, { intents, totalCount, hasMore }, leaders] = await Promise.all([
+        getGlobalStats(),
+        getPaperIntents(params, currentPage),
         getLeadersForFilter(),
     ])
 
-    const stats = {
-        total: intents.length,
-        trades: intents.filter(i => i.decision === 'TRADE').length,
-        skips: intents.filter(i => i.decision === 'SKIP').length,
-        filled: intents.filter(i => i.paperFill?.filled).length,
-        notFilled: intents.filter(i => i.paperFill && !i.paperFill.filled).length,
-    }
+    // Build base URL for pagination links
+    const baseParams = new URLSearchParams()
+    if (params.leader) baseParams.set('leader', params.leader)
+    if (params.decision) baseParams.set('decision', params.decision)
+    if (params.filled) baseParams.set('filled', params.filled)
+    const baseUrl = `/paper?${baseParams.toString()}${baseParams.toString() ? '&' : ''}`
+
+    const startIndex = (currentPage - 1) * PAGE_SIZE + 1
+    const endIndex = Math.min(currentPage * PAGE_SIZE, totalCount)
+
+    // Check if any filters are applied
+    const hasFilters = params.leader || params.decision || params.filled
 
     return (
         <PageLayout
@@ -84,9 +130,9 @@ export default async function PaperPage({ searchParams }: PaperPageProps) {
             description="Simulated decisions and execution results"
             icon={FileText}
         >
-            {/* Stats Grid */}
+            {/* Stats Grid - Always shows ALL non-backfill trades */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <StatCard label="Total" value={stats.total} />
+                <StatCard label="Total" value={stats.total} description="All non-backfill" />
                 <StatCard label="TRADE" value={stats.trades} variant="default" />
                 <StatCard label="SKIP" value={stats.skips} variant="warning" />
                 <StatCard label="Filled" value={stats.filled} variant="success" />
@@ -124,15 +170,24 @@ export default async function PaperPage({ searchParams }: PaperPageProps) {
                             <Filter className="size-4 mr-2" />
                             Filter
                         </Button>
-                        <Link href="/paper">
-                            <Button type="button" variant="secondary">
-                                <X className="size-4 mr-2" />
-                                Clear
-                            </Button>
-                        </Link>
+                        {hasFilters && (
+                            <Link href="/paper">
+                                <Button type="button" variant="secondary">
+                                    <X className="size-4 mr-2" />
+                                    Clear
+                                </Button>
+                            </Link>
+                        )}
                     </form>
                 </CardContent>
             </Card>
+
+            {/* Filtered count indicator */}
+            {hasFilters && (
+                <div className="text-sm text-muted-foreground">
+                    Showing {totalCount} filtered result{totalCount !== 1 ? 's' : ''} (of {stats.total} total)
+                </div>
+            )}
 
             {/* Results Table */}
             <Card>
@@ -232,6 +287,31 @@ export default async function PaperPage({ searchParams }: PaperPageProps) {
                     </Table>
                 </CardContent>
             </Card>
+
+            {/* Pagination */}
+            {totalCount > 0 && (
+                <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                        Showing {startIndex}–{endIndex} of {totalCount} records
+                    </div>
+                    <div className="flex gap-2">
+                        {currentPage > 1 && (
+                            <Link href={`${baseUrl}page=${currentPage - 1}`}>
+                                <Button variant="secondary" size="sm">
+                                    Previous
+                                </Button>
+                            </Link>
+                        )}
+                        {hasMore && (
+                            <Link href={`${baseUrl}page=${currentPage + 1}`}>
+                                <Button variant="secondary" size="sm">
+                                    Next <ChevronRight className="size-4 ml-1" />
+                                </Button>
+                            </Link>
+                        )}
+                    </div>
+                </div>
+            )}
         </PageLayout>
     )
 }

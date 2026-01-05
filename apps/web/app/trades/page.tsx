@@ -12,29 +12,41 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { TrendingUp, ExternalLink } from 'lucide-react'
+import { TrendingUp, ExternalLink, ChevronRight } from 'lucide-react'
+
+const PAGE_SIZE = 50
 
 interface TradesPageProps {
-    searchParams: Promise<{ leader?: string; showHistorical?: string }>
+    searchParams: Promise<{ leader?: string; showHistorical?: string; page?: string }>
 }
 
-async function getTrades(leaderId?: string, showHistorical: boolean = false) {
-    return prisma.trade.findMany({
-        where: {
-            ...(leaderId && { leaderId }),
-            ...(!showHistorical && { isBackfill: false }),
-        },
-        include: {
-            leader: {
-                select: { label: true, wallet: true },
+async function getTrades(leaderId?: string, showHistorical: boolean = false, page: number = 1) {
+    const skip = (page - 1) * PAGE_SIZE
+
+    const where = {
+        ...(leaderId && { leaderId }),
+        ...(!showHistorical && { isBackfill: false }),
+    }
+
+    const [trades, totalCount] = await Promise.all([
+        prisma.trade.findMany({
+            where,
+            include: {
+                leader: {
+                    select: { label: true, wallet: true },
+                },
+                paperIntents: {
+                    select: { id: true },
+                },
             },
-            paperIntents: {
-                select: { id: true },
-            },
-        },
-        orderBy: { tradeTs: 'desc' },
-        take: 100,
-    })
+            orderBy: { tradeTs: 'desc' },
+            skip,
+            take: PAGE_SIZE,
+        }),
+        prisma.trade.count({ where }),
+    ])
+
+    return { trades, totalCount, hasMore: skip + trades.length < totalCount }
 }
 
 async function getLeaders() {
@@ -48,11 +60,21 @@ export default async function TradesPage({ searchParams }: TradesPageProps) {
     const params = await searchParams
     const selectedLeaderId = params.leader
     const showHistorical = params.showHistorical === 'true'
+    const currentPage = Math.max(1, parseInt(params.page || '1', 10))
 
-    const [trades, leaders] = await Promise.all([
-        getTrades(selectedLeaderId, showHistorical),
+    const [{ trades, totalCount, hasMore }, leaders] = await Promise.all([
+        getTrades(selectedLeaderId, showHistorical, currentPage),
         getLeaders(),
     ])
+
+    // Build base URL for pagination links
+    const baseParams = new URLSearchParams()
+    if (selectedLeaderId) baseParams.set('leader', selectedLeaderId)
+    if (showHistorical) baseParams.set('showHistorical', 'true')
+    const baseUrl = `/trades?${baseParams.toString()}${baseParams.toString() ? '&' : ''}`
+
+    const startIndex = (currentPage - 1) * PAGE_SIZE + 1
+    const endIndex = Math.min(currentPage * PAGE_SIZE, totalCount)
 
     return (
         <PageLayout
@@ -197,6 +219,31 @@ export default async function TradesPage({ searchParams }: TradesPageProps) {
                     </Table>
                 </CardContent>
             </Card>
+
+            {/* Pagination */}
+            {totalCount > 0 && (
+                <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                        Showing {startIndex}–{endIndex} of {totalCount} trades
+                    </div>
+                    <div className="flex gap-2">
+                        {currentPage > 1 && (
+                            <Link href={`${baseUrl}page=${currentPage - 1}`}>
+                                <Button variant="secondary" size="sm">
+                                    Previous
+                                </Button>
+                            </Link>
+                        )}
+                        {hasMore && (
+                            <Link href={`${baseUrl}page=${currentPage + 1}`}>
+                                <Button variant="secondary" size="sm">
+                                    Next <ChevronRight className="size-4 ml-1" />
+                                </Button>
+                            </Link>
+                        )}
+                    </div>
+                </div>
+            )}
         </PageLayout>
     )
 }
