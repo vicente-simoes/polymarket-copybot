@@ -10,6 +10,7 @@ import {
     getHealthSummary
 } from './health.js';
 import { generateMissingPaperIntents } from './paper.js';
+import { simulateMissingFills } from './fills.js';
 
 const logger = pino({
     name: 'worker',
@@ -70,6 +71,13 @@ async function runPollLoop(): Promise<void> {
             const missingIntents = await generateMissingPaperIntents();
             if (missingIntents > 0) {
                 logger.info({ count: missingIntents }, 'Generated missing paper intents');
+            }
+
+            // Simulate fills for any paper intents that don't have them yet
+            // This updates position tracking for P&L
+            const simulatedFills = await simulateMissingFills();
+            if (simulatedFills > 0) {
+                logger.info({ count: simulatedFills }, 'Simulated paper fills');
             }
         } catch (error) {
             logger.error({ error }, 'Poll cycle failed');

@@ -1,7 +1,7 @@
 // Paper fill simulator - simulates whether paper intents would have filled
 import { prisma } from '@polymarket-bot/db';
 import pino from 'pino';
-import { getLatestQuote, getQuoteNearTimestamp } from './quotes.js';
+import { getLatestQuote, getQuoteNearTimestamp, captureQuoteForTrade } from './quotes.js';
 import { resolveMapping } from './mapping.js';
 
 const logger = pino({ name: 'fills' });
@@ -75,8 +75,19 @@ export async function simulateFillForIntent(intentId: string): Promise<string | 
     }
 
     // Get quote near the trade time for more accurate simulation
-    const quote = await getQuoteNearTimestamp(mapping.marketKey, trade.tradeTs, 60000)
+    // Try: 1) quote near trade time, 2) any quote for this market, 3) capture fresh quote
+    let quote = await getQuoteNearTimestamp(mapping.marketKey, trade.tradeTs, 60000)
         || await getLatestQuote(mapping.marketKey);
+
+    // If no historical quote exists, try to capture a fresh one
+    if (!quote) {
+        logger.info({ intentId, conditionId: trade.conditionId, outcome: trade.outcome },
+            'No historical quote - capturing fresh quote');
+        const freshQuoteId = await captureQuoteForTrade(trade.conditionId, trade.outcome);
+        if (freshQuoteId) {
+            quote = await prisma.quote.findUnique({ where: { id: freshQuoteId } });
+        }
+    }
 
     if (!quote) {
         // No quote available - can't determine fill
