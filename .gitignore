@@ -54,3 +54,5 @@ packages/*/package-lock.json
 *.pid
 *.seed
 *.pid.lock
+
+template/
