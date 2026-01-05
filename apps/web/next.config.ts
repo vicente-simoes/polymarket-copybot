@@ -5,11 +5,6 @@ const nextConfig: NextConfig = {
   // Mark packages as external for server-side rendering
   serverExternalPackages: ['pg'],
 
-  // Turbopack configuration for Prisma 7 ESM compatibility
-  turbopack: {
-    resolveExtensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
-  },
-
   // Transpile the Prisma client package
   transpilePackages: ['@polymarket-bot/db'],
 

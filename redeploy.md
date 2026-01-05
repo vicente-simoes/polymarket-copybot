@@ -2,6 +2,15 @@
 
 Use this guide to update your live server after pushing changes to GitHub.
 
+## Troubleshooting: "Local changes would be overwritten"
+
+If you see an error like `error: Your local changes to the following files would be overwritten by merge: pnpm-lock.yaml`, run this command to discard server-side changes and accept the new version:
+
+```bash
+git checkout pnpm-lock.yaml
+git pull origin main
+```
+
 ## 1. Connect to Server
 
 ```bash
@@ -20,7 +29,7 @@ git pull origin main
 Run this if you changed `package.json`:
 
 ```bash
-npm install
+pnpm install
 ```
 
 ## 4. Run Database Migrations (Optional)
@@ -36,17 +45,17 @@ cd ../..
 
 ## 5. Rebuild Applications
 
-Recopile the code to apply changes:
+Recompile the code to apply changes:
 
 ```bash
 # Build Core
 cd packages/core
-npm run build
+pnpm build
 cd ../..
 
 # Build Worker
 cd apps/worker
-npm run build
+pnpm build
 cd ../..
 
 # Build Web Dashboard
@@ -86,9 +95,10 @@ If you just made code changes (no DB/dependency changes), you can copy-paste thi
 ```bash
 cd ~/polymarket-copybot && \
 git pull origin main && \
-(cd packages/core && npm run build) && \
-(cd apps/worker && npm run build) && \
-(cd apps/web && npx next build --webpack) && \
+pnpm install && \
+(cd packages/core && pnpm build) && \
+(cd apps/worker && pnpm build) && \
+(cd apps/web && npx next build) && \
 sudo systemctl restart polymarket-worker polymarket-web && \
 sudo journalctl -u polymarket-worker -f
 ```
