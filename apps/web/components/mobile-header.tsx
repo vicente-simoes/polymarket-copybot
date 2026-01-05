@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { Menu, TrendingDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
@@ -25,8 +26,14 @@ export function MobileHeader() {
             </Sheet>
 
             <div className="flex items-center gap-2">
-                <div className="flex size-7 items-center justify-center rounded bg-primary">
-                    <TrendingDown className="size-4 text-primary-foreground" />
+                <div className="relative size-7 flex items-center justify-center">
+                    <Image
+                        src="/logo5.png"
+                        alt="PolymarketSpy Logo"
+                        width={28}
+                        height={28}
+                        className="object-contain"
+                    />
                 </div>
                 <span className="font-semibold">PolymarketSpy</span>
             </div>

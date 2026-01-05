@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
     LayoutDashboard,
@@ -36,8 +37,14 @@ export function Sidebar({ className }: { className?: string }) {
             {/* Brand */}
             <div className="flex h-14 items-center px-4 border-b border-sidebar-border">
                 <Link href="/" className="flex items-center gap-2">
-                    <div className="flex size-8 items-center justify-center rounded bg-primary">
-                        <TrendingDown className="size-5 text-primary-foreground" />
+                    <div className="relative size-8 flex items-center justify-center">
+                        <Image
+                            src="/logo5.png"
+                            alt="PolymarketSpy Logo"
+                            width={32}
+                            height={32}
+                            className="object-contain"
+                        />
                     </div>
                     <span className="text-lg font-bold text-sidebar-foreground">
                         PolymarketSpy
