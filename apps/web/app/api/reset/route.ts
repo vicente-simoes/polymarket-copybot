@@ -17,7 +17,8 @@ export async function POST() {
 
         // Finally: Delete trades and raw payloads
         await prisma.trade.deleteMany({});
-        await prisma.rawPayload.deleteMany({});
+        await prisma.tradeRaw.deleteMany({});
+        await prisma.quoteRaw.deleteMany({});
 
         return NextResponse.json({
             success: true,
