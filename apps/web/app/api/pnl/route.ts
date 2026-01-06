@@ -1,6 +1,27 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@polymarket-bot/db';
 
+// Fetch current market price from CLOB API
+async function fetchCurrentPrice(conditionId: string, outcome: string): Promise<number | null> {
+    try {
+        const response = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, {
+            headers: { 'Accept': 'application/json' },
+            next: { revalidate: 60 }, // Cache for 60 seconds
+        });
+
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        const token = data.tokens?.find((t: { outcome: string; price: number }) =>
+            t.outcome.toUpperCase() === outcome.toUpperCase()
+        );
+
+        return token?.price ?? null;
+    } catch {
+        return null;
+    }
+}
+
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const range = searchParams.get('range') || '7d';
@@ -30,6 +51,34 @@ export async function GET(request: Request) {
         orderBy: { updatedAt: 'desc' },
     });
 
+    // Fetch current prices for all open positions (in parallel)
+    const positionsWithPrices = await Promise.all(
+        openPositions.map(async (p) => {
+            const currentPrice = await fetchCurrentPrice(p.conditionId, p.outcome);
+            const unrealizedPnl = currentPrice !== null
+                ? (currentPrice - p.avgEntryPrice) * p.shares
+                : null;
+            const currentValue = currentPrice !== null
+                ? currentPrice * p.shares
+                : null;
+
+            return {
+                id: p.id,
+                marketKey: p.marketKey,
+                conditionId: p.conditionId,
+                outcome: p.outcome,
+                title: p.title,
+                shares: p.shares,
+                avgEntryPrice: p.avgEntryPrice,
+                totalCostBasis: p.totalCostBasis,
+                currentPrice,
+                unrealizedPnl,
+                currentValue,
+                updatedAt: p.updatedAt.toISOString(),
+            };
+        })
+    );
+
     // Get closed positions with resolutions
     const closedPositions = await prisma.position.findMany({
         where: { isClosed: true },
@@ -49,17 +98,16 @@ export async function GET(request: Request) {
         .flatMap(p => p.resolutions)
         .reduce((sum, r) => sum + r.realizedPnl, 0);
 
+    // Calculate unrealized P&L totals
+    const totalUnrealizedPnl = positionsWithPrices
+        .filter(p => p.unrealizedPnl !== null)
+        .reduce((sum, p) => sum + (p.unrealizedPnl ?? 0), 0);
+    const totalCurrentValue = positionsWithPrices
+        .filter(p => p.currentValue !== null)
+        .reduce((sum, p) => sum + (p.currentValue ?? 0), 0);
+
     return NextResponse.json({
-        openPositions: openPositions.map(p => ({
-            id: p.id,
-            marketKey: p.marketKey,
-            outcome: p.outcome,
-            title: p.title,
-            shares: p.shares,
-            avgEntryPrice: p.avgEntryPrice,
-            totalCostBasis: p.totalCostBasis,
-            updatedAt: p.updatedAt.toISOString(),
-        })),
+        openPositions: positionsWithPrices,
         closedPositions: closedPositions.map(p => ({
             id: p.id,
             marketKey: p.marketKey,
@@ -80,6 +128,8 @@ export async function GET(request: Request) {
         summary: {
             totalCostBasis,
             totalRealizedPnl,
+            totalUnrealizedPnl,
+            totalCurrentValue,
             openPositionCount: openPositions.length,
             closedPositionCount: closedPositions.length,
         },

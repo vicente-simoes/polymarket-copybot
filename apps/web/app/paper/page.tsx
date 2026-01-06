@@ -15,6 +15,7 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { FileText, Filter, X, ChevronRight } from 'lucide-react'
+import { ResetButton } from './reset-button'
 
 const PAGE_SIZE = 50
 
@@ -131,12 +132,15 @@ export default async function PaperPage({ searchParams }: PaperPageProps) {
             icon={FileText}
         >
             {/* Stats Grid - Always shows ALL non-backfill trades */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <StatCard label="Total" value={stats.total} description="All non-backfill" />
-                <StatCard label="TRADE" value={stats.trades} variant="default" />
-                <StatCard label="SKIP" value={stats.skips} variant="warning" />
-                <StatCard label="Filled" value={stats.filled} variant="success" />
-                <StatCard label="Not Filled" value={stats.notFilled} variant="destructive" />
+            <div className="flex items-start justify-between gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 flex-1">
+                    <StatCard label="Total" value={stats.total} description="All non-backfill" />
+                    <StatCard label="TRADE" value={stats.trades} variant="default" />
+                    <StatCard label="SKIP" value={stats.skips} variant="warning" />
+                    <StatCard label="Filled" value={stats.filled} variant="success" />
+                    <StatCard label="Not Filled" value={stats.notFilled} variant="destructive" />
+                </div>
+                <ResetButton />
             </div>
 
             {/* Filter Bar */}

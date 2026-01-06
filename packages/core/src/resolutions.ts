@@ -27,9 +27,13 @@ export interface ResolutionResult {
 interface PolymarketMarketResponse {
     closed?: boolean;
     resolved?: boolean;
-    winning_outcome?: string;
-    winningOutcome?: string;
     closed_at?: string;
+    tokens?: Array<{
+        token_id: string;
+        outcome: string;
+        winner: boolean;
+        price: number;
+    }>;
 }
 
 /**
@@ -55,9 +59,11 @@ async function fetchMarketResolution(conditionId: string): Promise<MarketResolut
         // Check if market is closed/resolved
         // The API returns different fields depending on market state
         if (data.closed || data.resolved) {
+            // Find winning outcome from tokens array
+            const winningToken = data.tokens?.find(t => t.winner === true);
             return {
                 resolved: true,
-                winningOutcome: data.winning_outcome || data.winningOutcome || null,
+                winningOutcome: winningToken?.outcome || null,
                 closedAt: data.closed_at ? new Date(data.closed_at) : new Date(),
             };
         }

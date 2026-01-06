@@ -26,6 +26,7 @@ import {
 } from 'recharts'
 
 type TimeRange = '24h' | '7d' | '30d' | 'all'
+type ChartRange = '1m' | '5m' | '30m' | '1h' | '6h' | '12h' | '24h' | '7d'
 
 interface PnlData {
     openPositions: Array<{
@@ -36,6 +37,9 @@ interface PnlData {
         shares: number
         avgEntryPrice: number
         totalCostBasis: number
+        currentPrice: number | null
+        unrealizedPnl: number | null
+        currentValue: number | null
         updatedAt: string
     }>
     closedPositions: Array<{
@@ -58,6 +62,8 @@ interface PnlData {
     summary: {
         totalCostBasis: number
         totalRealizedPnl: number
+        totalUnrealizedPnl: number
+        totalCurrentValue: number
         openPositionCount: number
         closedPositionCount: number
     }
@@ -67,7 +73,10 @@ export default function PnLPage() {
     const [data, setData] = useState<PnlData | null>(null)
     const [range, setRange] = useState<TimeRange>('7d')
     const [loading, setLoading] = useState(true)
+    const [chartRange, setChartRange] = useState<ChartRange>('1h')
+    const [chartData, setChartData] = useState<Array<{ timestamp: string; unrealizedPnl: number }>>([])
 
+    // Fetch main P&L data
     useEffect(() => {
         async function fetchData() {
             setLoading(true)
@@ -82,6 +91,39 @@ export default function PnLPage() {
         }
         fetchData()
     }, [range])
+
+    // Fetch chart data
+    useEffect(() => {
+        async function fetchChartData() {
+            try {
+                const res = await fetch(`/api/pnl/chart?range=${chartRange}`)
+                const json = await res.json()
+                setChartData(json.dataPoints || [])
+            } catch (error) {
+                console.error('Failed to fetch chart data:', error)
+            }
+        }
+        fetchChartData()
+        // Refresh chart data periodically
+        const interval = setInterval(fetchChartData, 10000)
+        return () => clearInterval(interval)
+    }, [chartRange])
+
+    // Record P&L snapshots every 30 seconds
+    useEffect(() => {
+        async function recordSnapshot() {
+            try {
+                await fetch('/api/pnl/snapshot', { method: 'POST' })
+            } catch (error) {
+                console.error('Failed to record snapshot:', error)
+            }
+        }
+        // Record immediately on load
+        recordSnapshot()
+        // Then every 30 seconds
+        const interval = setInterval(recordSnapshot, 30000)
+        return () => clearInterval(interval)
+    }, [])
 
     if (loading) {
         return (
@@ -114,10 +156,19 @@ export default function PnLPage() {
             icon={DollarSign}
         >
             {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <StatCard
                     label="Total Cost Basis"
                     value={`$${summary.totalCostBasis.toFixed(2)}`}
+                />
+                <StatCard
+                    label="Current Value"
+                    value={`$${summary.totalCurrentValue.toFixed(2)}`}
+                />
+                <StatCard
+                    label="Unrealized P&L"
+                    value={`${summary.totalUnrealizedPnl >= 0 ? '+' : ''}$${summary.totalUnrealizedPnl.toFixed(2)}`}
+                    variant={summary.totalUnrealizedPnl >= 0 ? 'success' : 'destructive'}
                 />
                 <StatCard
                     label="Realized P&L"
@@ -128,12 +179,89 @@ export default function PnLPage() {
                 <StatCard label="Closed Positions" value={summary.closedPositionCount} />
             </div>
 
+            {/* Unrealized P&L Chart */}
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="size-4" />
+                        Unrealized P&L Over Time
+                    </CardTitle>
+                    <div className="flex gap-1 flex-wrap">
+                        {(['1m', '5m', '30m', '1h', '6h', '12h', '24h', '7d'] as const).map(r => (
+                            <Button
+                                key={r}
+                                onClick={() => setChartRange(r)}
+                                variant={chartRange === r ? 'default' : 'secondary'}
+                                size="sm"
+                            >
+                                {r}
+                            </Button>
+                        ))}
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    {chartData.length > 1 ? (
+                        <div className="h-[250px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                                    <XAxis
+                                        dataKey="timestamp"
+                                        stroke="#888"
+                                        fontSize={12}
+                                        tickFormatter={(value) => {
+                                            const date = new Date(value)
+                                            if (['1m', '5m', '30m', '1h'].includes(chartRange)) {
+                                                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                            }
+                                            return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                        }}
+                                    />
+                                    <YAxis
+                                        stroke="#888"
+                                        fontSize={12}
+                                        tickFormatter={(value) => `$${value.toFixed(2)}`}
+                                    />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: '#1a1a1a',
+                                            border: '1px solid #333',
+                                            borderRadius: '6px',
+                                            color: '#fff',
+                                        }}
+                                        labelStyle={{ color: '#fff' }}
+                                        formatter={(value: number | undefined) => [value != null ? `$${value.toFixed(2)}` : '$0.00', 'Unrealized P&L']}
+                                        labelFormatter={(label) => new Date(label).toLocaleString()}
+                                    />
+                                    <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="unrealizedPnl"
+                                        stroke={chartData[chartData.length - 1]?.unrealizedPnl >= 0 ? '#22c55e' : '#ef4444'}
+                                        strokeWidth={3}
+                                        dot={{ fill: chartData[chartData.length - 1]?.unrealizedPnl >= 0 ? '#22c55e' : '#ef4444', r: 3 }}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <div className="h-[200px] flex items-center justify-center text-muted-foreground text-center">
+                            <div>
+                                <p>Collecting data points...</p>
+                                <p className="text-sm">Snapshots are recorded every 30 seconds while this page is open.</p>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
             {/* P&L Chart */}
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <CardTitle className="flex items-center gap-2">
                         <TrendingUp className="size-4" />
-                        P&L Over Time
+                        Total P&L Over Time
+                        <span className="text-xs font-normal text-muted-foreground">(Realized + Unrealized)</span>
                     </CardTitle>
                     <div className="flex gap-1">
                         {(['24h', '7d', '30d', 'all'] as const).map(r => (
@@ -153,35 +281,36 @@ export default function PnLPage() {
                         <div className="h-[300px]">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={pnlHistory}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                                     <XAxis
                                         dataKey="timestamp"
-                                        stroke="hsl(var(--muted-foreground))"
+                                        stroke="#888"
                                         fontSize={12}
                                         tickFormatter={(value) => new Date(value).toLocaleDateString()}
                                     />
                                     <YAxis
-                                        stroke="hsl(var(--muted-foreground))"
+                                        stroke="#888"
                                         fontSize={12}
                                         tickFormatter={(value) => `$${value}`}
                                     />
                                     <Tooltip
                                         contentStyle={{
-                                            backgroundColor: 'hsl(var(--card))',
-                                            border: '1px solid hsl(var(--border))',
+                                            backgroundColor: '#1a1a1a',
+                                            border: '1px solid #333',
                                             borderRadius: '6px',
+                                            color: '#fff',
                                         }}
-                                        labelStyle={{ color: 'hsl(var(--foreground))' }}
+                                        labelStyle={{ color: '#fff' }}
                                         formatter={(value: number | undefined) => [value != null ? `$${value.toFixed(2)}` : '$0.00', 'P&L']}
                                         labelFormatter={(label) => new Date(label).toLocaleString()}
                                     />
-                                    <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
+                                    <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
                                     <Line
                                         type="monotone"
                                         dataKey="totalPnl"
-                                        stroke={pnlHistory[pnlHistory.length - 1]?.totalPnl >= 0 ? 'hsl(var(--success))' : 'hsl(var(--destructive))'}
-                                        strokeWidth={2}
-                                        dot={false}
+                                        stroke={pnlHistory[pnlHistory.length - 1]?.totalPnl >= 0 ? '#22c55e' : '#ef4444'}
+                                        strokeWidth={3}
+                                        dot={{ fill: pnlHistory[pnlHistory.length - 1]?.totalPnl >= 0 ? '#22c55e' : '#ef4444', r: 3 }}
                                     />
                                 </LineChart>
                             </ResponsiveContainer>
@@ -215,13 +344,15 @@ export default function PnLPage() {
                                     <TableHead>Outcome</TableHead>
                                     <TableHead className="text-right">Shares</TableHead>
                                     <TableHead className="text-right">Avg Entry</TableHead>
+                                    <TableHead className="text-right">Current</TableHead>
                                     <TableHead className="text-right">Cost Basis</TableHead>
+                                    <TableHead className="text-right">P&L</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {openPositions.map(pos => (
                                     <TableRow key={pos.id}>
-                                        <TableCell className="max-w-[300px] truncate">
+                                        <TableCell className="max-w-[250px] truncate">
                                             {pos.title || pos.marketKey}
                                         </TableCell>
                                         <TableCell>
@@ -231,7 +362,13 @@ export default function PnLPage() {
                                         </TableCell>
                                         <TableCell className="text-right font-mono">{pos.shares.toFixed(2)}</TableCell>
                                         <TableCell className="text-right font-mono">${pos.avgEntryPrice.toFixed(3)}</TableCell>
+                                        <TableCell className="text-right font-mono">
+                                            {pos.currentPrice !== null ? `$${pos.currentPrice.toFixed(3)}` : '-'}
+                                        </TableCell>
                                         <TableCell className="text-right font-mono">${pos.totalCostBasis.toFixed(2)}</TableCell>
+                                        <TableCell className={`text-right font-mono ${pos.unrealizedPnl !== null ? (pos.unrealizedPnl >= 0 ? 'text-success' : 'text-destructive') : ''}`}>
+                                            {pos.unrealizedPnl !== null ? `${pos.unrealizedPnl >= 0 ? '+' : ''}$${pos.unrealizedPnl.toFixed(2)}` : '-'}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>

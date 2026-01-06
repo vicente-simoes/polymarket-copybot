@@ -25,16 +25,19 @@ export interface PositionUpdate {
 export async function updatePosition(fill: PositionUpdate) {
     const { marketKey, outcome, operationType, shares, price, conditionId, title } = fill;
 
+    // Normalize outcome to uppercase for consistent lookups
+    const normalizedOutcome = outcome.toUpperCase();
+
     // Find or create position
     let position = await prisma.position.findUnique({
-        where: { marketKey_outcome: { marketKey, outcome } }
+        where: { marketKey_outcome: { marketKey, outcome: normalizedOutcome } }
     });
 
     if (!position) {
         position = await prisma.position.create({
             data: {
                 marketKey,
-                outcome,
+                outcome: normalizedOutcome,
                 conditionId,
                 title,
                 shares: 0,
