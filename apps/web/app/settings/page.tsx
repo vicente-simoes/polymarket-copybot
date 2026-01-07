@@ -30,6 +30,10 @@ async function updateSettings(formData: FormData) {
         sellMaxSpread: Math.max(0.001, Math.min(0.2, parseFloat(formData.get('sellMaxSpread') as string) || 0.1)),
         sellAlwaysAttempt: formData.get('sellAlwaysAttempt') === 'on',
         splitMergeAlwaysFollow: formData.get('splitMergeAlwaysFollow') === 'on',
+        skipMakerTrades: formData.get('skipMakerTrades') === 'on',
+        maxUsdcPerEvent: Math.max(1, Math.min(1000, parseFloat(formData.get('maxUsdcPerEvent') as string) || 50)),
+        maxOpenPositions: Math.max(1, Math.min(100, parseFloat(formData.get('maxOpenPositions') as string) || 10)),
+        skipAbovePrice: formData.get('skipAbovePrice')?.toString().trim() ? Math.max(0.01, Math.min(0.99, parseFloat(formData.get('skipAbovePrice') as string))) : null,
     }
 
     await prisma.settings.upsert({
@@ -151,6 +155,62 @@ export default async function SettingsPage(
                                     max="0.1"
                                     defaultValue={settings.maxSpread}
                                 />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="maxOpenPositions">Max Open Positions</Label>
+                                <Input
+                                    id="maxOpenPositions"
+                                    name="maxOpenPositions"
+                                    type="number"
+                                    step="1"
+                                    min="1"
+                                    max="100"
+                                    defaultValue={settings.maxOpenPositions}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="maxUsdcPerEvent">Max USDC Per Event</Label>
+                                <Input
+                                    id="maxUsdcPerEvent"
+                                    name="maxUsdcPerEvent"
+                                    type="number"
+                                    step="1"
+                                    min="1"
+                                    max="1000"
+                                    defaultValue={settings.maxUsdcPerEvent}
+                                />
+                            </div>
+                            <div className="flex items-center gap-3 pt-6">
+                                <input
+                                    id="skipMakerTrades"
+                                    name="skipMakerTrades"
+                                    type="checkbox"
+                                    defaultChecked={settings.skipMakerTrades}
+                                    className="size-4 rounded border-border"
+                                />
+                                <Label htmlFor="skipMakerTrades" className="font-normal cursor-pointer">
+                                    <span className="font-medium">Skip Maker Trades (Global)</span>
+                                    <span className="block text-xs text-muted-foreground">Skip trades where leader provided liquidity</span>
+                                </Label>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="skipAbovePrice">
+                                    Skip Above Price (Probability)
+                                    <span className="text-muted-foreground ml-2 font-normal">
+                                        {settings.skipAbovePrice ? `(${(settings.skipAbovePrice * 100).toFixed(0)}¢)` : '(disabled)'}
+                                    </span>
+                                </Label>
+                                <Input
+                                    id="skipAbovePrice"
+                                    name="skipAbovePrice"
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    max="0.99"
+                                    placeholder="e.g. 0.97 = skip 97¢ or higher"
+                                    defaultValue={settings.skipAbovePrice ?? ''}
+                                />
+                                <p className="text-xs text-muted-foreground">Leave empty to disable. Skip BUY trades where share price is at or above this threshold.</p>
                             </div>
                         </div>
                     </CardContent>
@@ -274,6 +334,16 @@ export default async function SettingsPage(
                             <div className="text-xs text-muted-foreground mb-1">SPLIT/MERGE Follow</div>
                             <Badge variant={settings.splitMergeAlwaysFollow ? 'success' : 'muted'}>
                                 {settings.splitMergeAlwaysFollow ? 'Yes' : 'No'}
+                            </Badge>
+                        </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground mb-1">Max Positions</div>
+                            <div className="font-mono text-sm">{settings.maxOpenPositions}</div>
+                        </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground mb-1">Skip Maker</div>
+                            <Badge variant={settings.skipMakerTrades ? 'destructive' : 'muted'}>
+                                {settings.skipMakerTrades ? 'Skip' : 'Allow'}
                             </Badge>
                         </div>
                     </div>

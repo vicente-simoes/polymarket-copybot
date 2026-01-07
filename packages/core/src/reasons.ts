@@ -21,6 +21,9 @@ export const DecisionReasons = {
     SKIP_BOOKSTORE_UNHEALTHY: 'SKIP_BOOKSTORE_UNHEALTHY',
     SKIP_POLYGON_UNHEALTHY: 'SKIP_POLYGON_UNHEALTHY',
     SKIP_QUOTE_STALE: 'SKIP_QUOTE_STALE',
+
+    // Price threshold
+    SKIP_ABOVE_PRICE: 'SKIP_ABOVE_PRICE',
 } as const;
 
 export type DecisionReason = typeof DecisionReasons[keyof typeof DecisionReasons];

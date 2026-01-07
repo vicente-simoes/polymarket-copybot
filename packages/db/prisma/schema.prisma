@@ -33,6 +33,7 @@ model Settings {
   skipMakerTrades         Boolean  @default(false) // Skip if leader was maker (passive) - false by default since price guards protect us
   maxUsdcPerEvent         Float    @default(50)    // Max exposure per market event
   maxOpenPositions        Int      @default(10)    // Max concurrent open positions
+  skipAbovePrice          Float?                   // Skip BUY if price >= this threshold (e.g., 0.97 = 97¢)
   
   updatedAt               DateTime @updatedAt
 

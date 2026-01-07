@@ -23,6 +23,7 @@ export interface Settings {
     skipMakerTrades: boolean;
     maxUsdcPerEvent: number;
     maxOpenPositions: number;
+    skipAbovePrice: number | null;  // Skip BUY if price >= this
 }
 
 export type OperationType = 'BUY' | 'SELL' | 'SPLIT' | 'MERGE';

@@ -77,6 +77,7 @@ export interface GuardrailConfig {
     maxSpread: number;
     minUsdcPerTrade: number;
     allowlist: string[] | null; // null means all markets allowed
+    skipAbovePrice: number | null;  // Skip BUY if price >= this
 }
 
 export interface RiskState {
