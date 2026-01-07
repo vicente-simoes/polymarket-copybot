@@ -49,8 +49,9 @@ model Leader {
   maxUsdcPerTrade Float?
   maxUsdcPerDay   Float?
 
-  tradeRaws TradeRaw[]
-  trades    Trade[]
+  tradeRaws   TradeRaw[]
+  trades      Trade[]
+  leaderFills LeaderFill[]
 
   @@map("leaders")
 }
@@ -135,6 +136,68 @@ model MarketMapping {
   @@unique([conditionId, outcome])
   @@map("market_mapping")
 }
+
+// ============================================================================
+// PHASE 2: Market Registry - Pre-loaded market metadata from Gamma API
+// ============================================================================
+
+// MarketRegistry - Cached market metadata from Gamma API
+model MarketRegistry {
+  id               String   @id @default(uuid())
+  conditionId      String   @unique  // primary lookup key
+  
+  // Market metadata
+  title            String
+  slug             String?
+  category         String?
+  endDate          DateTime?
+  
+  // Trading status
+  enableOrderBook  Boolean  @default(true)
+  active           Boolean  @default(true)
+  closed           Boolean  @default(false)
+  
+  // Token data (JSON array of {tokenId, outcome})
+  tokens           Json     // Array<{tokenId: string, outcome: string, winner?: boolean}>
+  
+  // Additional metadata
+  description      String?
+  
+  // Sync tracking
+  gammaMarketId    String?  // Gamma API market ID
+  lastSyncedAt     DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  tokenIndexes     TokenIndex[]
+
+  @@index([enableOrderBook])
+  @@index([active])
+  @@index([lastSyncedAt])
+  @@map("market_registry")
+}
+
+// TokenIndex - Fast lookup from tokenId to market/outcome
+model TokenIndex {
+  id            String          @id @default(uuid())
+  tokenId       String          @unique  // CLOB token ID - primary lookup key
+  
+  // References
+  registryId    String
+  registry      MarketRegistry  @relation(fields: [registryId], references: [id], onDelete: Cascade)
+  
+  // Denormalized for fast lookups (avoid joins)
+  conditionId   String
+  outcome       String
+  title         String?
+  
+  createdAt     DateTime        @default(now())
+
+  @@index([conditionId])
+  @@map("token_index")
+}
+
 
 // ============================================================================
 // Quotes - Top-of-book snapshots (best bid/ask)
@@ -255,3 +318,162 @@ model PnlSnapshot {
   @@map("pnl_snapshots")
 }
 
+// ============================================================================
+// PHASE 1: Polygon Logs + Execution Tracking
+// ============================================================================
+
+// Leader Fill Raw - Raw payloads from any source (data_api or polygon)
+model LeaderFillRaw {
+  id         String         @id @default(uuid())
+  source     FillSource     // data_api or polygon
+  payload    Json           // entire payload for audit/reprocessing
+  createdAt  DateTime       @default(now())
+
+  leaderFill LeaderFill?
+
+  @@map("leader_fill_raw")
+}
+
+enum FillSource {
+  data_api
+  polygon
+}
+
+// Leader Fill - Canonical normalized leader fill from any source
+model LeaderFill {
+  id               String         @id @default(uuid())
+  leaderId         String
+  leader           Leader         @relation(fields: [leaderId], references: [id])
+  source           FillSource
+
+  // Chain identity (nullable for data_api source)
+  exchangeAddress  String?        // contract address
+  blockNumber      Int?
+  txHash           String?
+  logIndex         Int?
+  orderHash        String?
+
+  // Participants (nullable for data_api source)
+  maker            String?
+  taker            String?
+  leaderRole       LeaderRole     @default(unknown)
+
+  // Trade details
+  tokenId          String         // CLOB token ID
+  conditionId      String
+  outcome          String
+  side             TradeSide
+  leaderPrice      Decimal        @db.Decimal(20, 10)
+  leaderSize       Decimal        @db.Decimal(20, 10)  // shares
+  leaderUsdc       Decimal        @db.Decimal(20, 10)  // notional
+
+  // Timestamps
+  fillTs           DateTime       // when the fill happened (block time or API timestamp)
+  detectedAt       DateTime       @default(now())  // when we detected it
+
+  // Metadata
+  title            String?
+  isBackfill       Boolean        @default(false)
+
+  // Dedupe and raw reference
+  dedupeKey        String         @unique  // exchange|block|tx|logIndex for polygon, or existing key for data_api
+  rawId            String         @unique
+  raw              LeaderFillRaw  @relation(fields: [rawId], references: [id])
+
+  // Relations
+  executionAttempts ExecutionAttempt[]
+
+  @@index([leaderId])
+  @@index([conditionId])
+  @@index([fillTs])
+  @@index([blockNumber])
+  @@index([txHash])
+  @@map("leader_fills")
+}
+
+enum LeaderRole {
+  maker
+  taker
+  unknown
+}
+
+// Execution Attempt - One per leader fill we decide to copy (or skip)
+model ExecutionAttempt {
+  id               String              @id @default(uuid())
+  leaderFillId     String
+  leaderFill       LeaderFill          @relation(fields: [leaderFillId], references: [id])
+
+  // Execution mode
+  mode             ExecutionMode
+
+  // Decision
+  decision         IntentDecision      // TRADE or SKIP
+  decisionReason   String?             // structured reason
+
+  // Order details
+  ratio            Decimal             @db.Decimal(10, 6)
+  tokenId          String
+  conditionId      String
+  outcome          String
+  side             TradeSide
+  sizeSharesTarget Decimal             @db.Decimal(20, 10)
+  limitPrice       Decimal             @db.Decimal(20, 10)
+  ttlMs            Int                 @default(30000)  // 30 second default TTL
+
+  // Status tracking
+  status           ExecutionStatus     @default(SUBMITTED)
+  placedAt         DateTime?
+  doneAt           DateTime?
+
+  createdAt        DateTime            @default(now())
+
+  // Relations
+  executionFills   ExecutionFill[]
+
+  @@index([leaderFillId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("execution_attempts")
+}
+
+enum ExecutionMode {
+  paper
+  live
+}
+
+enum ExecutionStatus {
+  SKIPPED     // decision was SKIP
+  SUBMITTED   // order placed, waiting for fills
+  PARTIAL     // partially filled
+  FILLED      // fully filled
+  CANCELED    // canceled (TTL expired or manual)
+  FAILED      // failed to execute
+}
+
+// Execution Fill - Zero+ rows per attempt (supports partial fills)
+model ExecutionFill {
+  id            String           @id @default(uuid())
+  attemptId     String
+  attempt       ExecutionAttempt @relation(fields: [attemptId], references: [id])
+
+  filledShares  Decimal          @db.Decimal(20, 10)
+  fillPrice     Decimal          @db.Decimal(20, 10)
+  feeUsdc       Decimal?         @db.Decimal(20, 10)
+  fillAt        DateTime         @default(now())
+
+  @@index([attemptId])
+  @@map("execution_fills")
+}
+
+// Polygon Cursor - Track last processed block for gap-fill on restart
+model PolygonCursor {
+  id                   String   @id @default(uuid())
+  exchangeAddress      String   // CTF or NegRisk contract
+  leaderAddress        String   // leader wallet being tracked
+  role                 LeaderRole  // maker or taker
+  lastProcessedBlock   Int
+  updatedAt            DateTime @updatedAt
+
+  @@unique([exchangeAddress, leaderAddress, role])
+  @@map("polygon_cursors")
+}

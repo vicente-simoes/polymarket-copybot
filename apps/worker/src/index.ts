@@ -11,6 +11,7 @@ import {
 } from './health.js';
 import { generateMissingPaperIntents } from './paper.js';
 import { simulateMissingFills } from './fills.js';
+import { getConfig, logConfig } from './config.js';
 
 const logger = pino({
     name: 'worker',
@@ -22,9 +23,8 @@ const logger = pino({
     },
 });
 
-const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000', 10);
-const HEALTH_LOG_INTERVAL = parseInt(process.env.HEALTH_LOG_INTERVAL || '60000', 10); // 1 minute
-const PNL_SNAPSHOT_INTERVAL = parseInt(process.env.PNL_SNAPSHOT_INTERVAL || '3600000', 10); // 1 hour
+// Load configuration from centralized config module
+const config = getConfig();
 
 let isRunning = true;
 let lastHealthLog = 0;
@@ -34,10 +34,13 @@ let lastPnlSnapshot = 0;
  * Main polling loop with hardening
  */
 async function runPollLoop(): Promise<void> {
+    // Log full configuration on startup
+    logConfig(logger);
+
     logger.info({
-        pollIntervalMs: POLL_INTERVAL_MS,
-        healthLogIntervalMs: HEALTH_LOG_INTERVAL,
-        pnlSnapshotIntervalMs: PNL_SNAPSHOT_INTERVAL,
+        pollIntervalMs: config.pollIntervalMs,
+        healthLogIntervalMs: config.healthLogIntervalMs,
+        pnlSnapshotIntervalMs: config.pnlSnapshotIntervalMs,
     }, 'Worker starting...');
 
     // Wait for database to be available
@@ -85,13 +88,13 @@ async function runPollLoop(): Promise<void> {
 
         // Periodic health logging
         const now = Date.now();
-        if (now - lastHealthLog >= HEALTH_LOG_INTERVAL) {
+        if (now - lastHealthLog >= config.healthLogIntervalMs) {
             logHealthStatus();
             lastHealthLog = now;
         }
 
         // Periodic P&L snapshot for historical charts
-        if (now - lastPnlSnapshot >= PNL_SNAPSHOT_INTERVAL) {
+        if (now - lastPnlSnapshot >= config.pnlSnapshotIntervalMs) {
             try {
                 const { recordPnlSnapshot, checkMarketResolutions } = await import('@polymarket-bot/core');
 
@@ -115,7 +118,7 @@ async function runPollLoop(): Promise<void> {
         }
 
         // Wait for next poll interval with jitter to avoid thundering herd
-        await sleep(POLL_INTERVAL_MS, 500);
+        await sleep(config.pollIntervalMs, 500);
     }
 
     logger.info('Worker stopped');
