@@ -1,0 +1,18 @@
+[Unit]
+Description=Polymarket Copy Bot Worker
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=polybot
+WorkingDirectory=/home/polybot/polymarket-copybot
+# Optimized for low memory: uses "node dist/index.js" via start:prod
+ExecStart=/usr/bin/pnpm --filter @polymarket-bot/worker start:prod
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+# Load environment variables if needed, though they are usually in .env
+# EnvironmentFile=/home/polybot/polymarket-copybot/.env
+
+[Install]
+WantedBy=multi-user.target

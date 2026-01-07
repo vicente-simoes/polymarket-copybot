@@ -165,20 +165,18 @@ export async function getResolutionSummary() {
         orderBy: { resolvedAt: 'desc' },
     });
 
-    const totalRealizedPnl = resolutions.reduce((sum, r) => sum + r.realizedPnl, 0);
-    const wins = resolutions.filter(r => r.realizedPnl > 0).length;
-    const losses = resolutions.filter(r => r.realizedPnl <= 0).length;
+    const totalRealizedPnl = resolutions.reduce((sum: number, r: { realizedPnl: number }) => sum + r.realizedPnl, 0);
+    const wins = resolutions.filter((r: { realizedPnl: number }) => r.realizedPnl > 0).length;
+    const losses = resolutions.filter((r: { realizedPnl: number }) => r.realizedPnl <= 0).length;
     const winRate = resolutions.length > 0 ? (wins / resolutions.length) * 100 : 0;
 
-    const bestTrade = resolutions.reduce((best, r) =>
-        r.realizedPnl > (best?.realizedPnl || -Infinity) ? r : best,
-        resolutions[0] || null
-    );
+    const bestTrade = resolutions.reduce((best: any, r: any) =>
+        (r.realizedPnl > (best?.realizedPnl ?? -Infinity)) ? r : best
+        , null);
 
-    const worstTrade = resolutions.reduce((worst, r) =>
-        r.realizedPnl < (worst?.realizedPnl || Infinity) ? r : worst,
-        resolutions[0] || null
-    );
+    const worstTrade = resolutions.reduce((worst: any, r: any) =>
+        (r.realizedPnl < (worst?.realizedPnl ?? Infinity)) ? r : worst
+        , null);
 
     return {
         totalResolutions: resolutions.length,
@@ -194,12 +192,11 @@ export async function getResolutionSummary() {
             market: worstTrade.position.title || worstTrade.position.marketKey,
             pnl: worstTrade.realizedPnl,
         } : null,
-        recentResolutions: resolutions.slice(0, 10).map(r => ({
-            market: r.position.title || r.position.marketKey,
-            outcome: r.position.outcome,
-            winningOutcome: r.resolvedOutcome,
+        recentResolutions: resolutions.slice(0, 10).map((r: any) => ({
+            marketTitle: r.position?.title || 'Unknown',
+            resolvedOutcome: r.resolvedOutcome,
             realizedPnl: r.realizedPnl,
-            resolvedAt: r.resolvedAt,
+            resolutionPrice: r.resolutionPrice
         })),
     };
 }

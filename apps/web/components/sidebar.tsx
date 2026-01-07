@@ -12,7 +12,8 @@ import {
     BarChart3,
     Settings,
     Bug,
-    TrendingDown
+    TrendingDown,
+    Zap
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -25,6 +26,7 @@ const navItems = [
     { href: '/paper', label: 'Paper Trading', icon: FileText },
     { href: '/pnl', label: 'P&L', icon: DollarSign },
     { href: '/metrics', label: 'Metrics', icon: BarChart3 },
+    { href: '/latency', label: 'Latency', icon: Zap },
     { href: '/settings', label: 'Settings', icon: Settings },
     { href: '/debug', label: 'Debug', icon: Bug },
 ]

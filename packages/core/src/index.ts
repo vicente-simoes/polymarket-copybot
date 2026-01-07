@@ -6,6 +6,6 @@ export * from './reasons.js';
 export * from './strategy.js';
 export * from './validation.js';
 export * from './settings.js';
-export { OperationType } from './settings.js';
+export type { OperationType } from './settings.js';
 export * from './positions.js';
 export * from './resolutions.js';

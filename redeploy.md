@@ -65,7 +65,18 @@ npx next build --webpack
 cd ../..
 ```
 
-## 6. Restart Services
+## 6. Setup Systemd Services (First Time Only)
+If you haven't set up the services yet or updated the service files:
+
+```bash
+sudo cp deploy/polymarket-worker.service /etc/systemd/system/
+sudo cp deploy/polymarket-web.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable polymarket-worker
+sudo systemctl enable polymarket-web
+```
+
+## 7. Restart Services
 
 Restart systemd services to pick up the new code:
 
@@ -74,7 +85,7 @@ sudo systemctl restart polymarket-worker
 sudo systemctl restart polymarket-web
 ```
 
-## 7. Verify Status
+## 8. Verify Status
 
 Check that everything started correctly:
 
@@ -99,6 +110,9 @@ pnpm install && \
 (cd packages/core && pnpm build) && \
 (cd apps/worker && pnpm build) && \
 (cd apps/web && npx next build --webpack) && \
+sudo cp deploy/polymarket-worker.service /etc/systemd/system/ && \
+sudo cp deploy/polymarket-web.service /etc/systemd/system/ && \
+sudo systemctl daemon-reload && \
 sudo systemctl restart polymarket-worker polymarket-web && \
 sudo journalctl -u polymarket-worker -f
 ```

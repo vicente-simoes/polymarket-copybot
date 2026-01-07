@@ -81,14 +81,17 @@ async function updateLeaderOverrides(formData: FormData) {
     const ratioStr = formData.get('ratio') as string
     const maxTradeStr = formData.get('maxUsdcPerTrade') as string
     const maxDayStr = formData.get('maxUsdcPerDay') as string
+    const skipMakerStr = formData.get('skipMakerTrades') as string
 
     const ratio = ratioStr?.trim() ? parseFloat(ratioStr) : null
     const maxUsdcPerTrade = maxTradeStr?.trim() ? parseFloat(maxTradeStr) : null
     const maxUsdcPerDay = maxDayStr?.trim() ? parseFloat(maxDayStr) : null
+    // Tri-state: 'true' = override to true, 'false' = override to false, '' = null (use global)
+    const skipMakerTrades = skipMakerStr === 'true' ? true : skipMakerStr === 'false' ? false : null
 
     await prisma.leader.update({
         where: { id },
-        data: { ratio, maxUsdcPerTrade, maxUsdcPerDay },
+        data: { ratio, maxUsdcPerTrade, maxUsdcPerDay, skipMakerTrades },
     })
     revalidatePath('/leaders')
 }
@@ -158,6 +161,10 @@ export default async function LeadersPage() {
                         <div>
                             <span className="text-xs text-muted-foreground">Max/Day</span>
                             <div className="font-mono text-sm">${globalSettings.maxUsdcPerDay}</div>
+                        </div>
+                        <div>
+                            <span className="text-xs text-muted-foreground">Skip Maker</span>
+                            <div className="font-mono text-sm">{globalSettings.skipMakerTrades ? 'Yes' : 'No'}</div>
                         </div>
                     </div>
                 </CardContent>
@@ -258,6 +265,23 @@ export default async function LeadersPage() {
                                                 defaultValue={leader.maxUsdcPerDay ?? ''}
                                                 className="h-9"
                                             />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs">
+                                                Skip Maker Trades
+                                                <span className="text-muted-foreground ml-1">
+                                                    {leader.skipMakerTrades !== null ? '(override)' : '(global)'}
+                                                </span>
+                                            </Label>
+                                            <select
+                                                name="skipMakerTrades"
+                                                defaultValue={leader.skipMakerTrades === null ? '' : String(leader.skipMakerTrades)}
+                                                className="w-full h-9 px-3 rounded-md border bg-background text-sm"
+                                            >
+                                                <option value="">Use Global ({globalSettings.skipMakerTrades ? 'Skip' : 'Allow'})</option>
+                                                <option value="false">Allow Maker Trades</option>
+                                                <option value="true">Skip Maker Trades</option>
+                                            </select>
                                         </div>
                                         <div className="flex items-end">
                                             <Button type="submit" size="sm" className="w-full">

@@ -18,6 +18,11 @@ export interface Settings {
     sellMaxSpread: number;
     sellAlwaysAttempt: boolean;
     splitMergeAlwaysFollow: boolean;
+
+    // Risk Controls (Phase 6)
+    skipMakerTrades: boolean;
+    maxUsdcPerEvent: number;
+    maxOpenPositions: number;
 }
 
 export type OperationType = 'BUY' | 'SELL' | 'SPLIT' | 'MERGE';
@@ -33,8 +38,16 @@ export interface EffectiveConfig extends Settings {
         ratio: boolean;
         maxUsdcPerTrade: boolean;
         maxUsdcPerDay: boolean;
+        // Phase 6 overrides
+        skipMakerTrades: boolean;
+        maxUsdcPerEvent: boolean;
     };
 }
+
+// ... (omitting cache logic which is fine, assuming it matches Settings)
+
+// Update getEffectiveConfig return
+
 
 // ============================================================================
 // Settings Cache (10-second TTL to avoid DB hits per trade)
@@ -135,6 +148,10 @@ export async function getEffectiveConfig(
         maxUsdcPerTrade: leader?.maxUsdcPerTrade ?? global.maxUsdcPerTrade,
         maxUsdcPerDay: leader?.maxUsdcPerDay ?? global.maxUsdcPerDay,
 
+        // Phase 6 Risk Overrides
+        skipMakerTrades: leader?.skipMakerTrades ?? global.skipMakerTrades,
+        maxUsdcPerEvent: leader?.maxUsdcPerEvent ?? global.maxUsdcPerEvent,
+
         // Operation-specific effective values
         effectiveMaxPriceMovePct,
         effectiveMaxSpread,
@@ -145,6 +162,8 @@ export async function getEffectiveConfig(
             ratio: leader?.ratio != null,
             maxUsdcPerTrade: leader?.maxUsdcPerTrade != null,
             maxUsdcPerDay: leader?.maxUsdcPerDay != null,
+            skipMakerTrades: leader?.skipMakerTrades != null,
+            maxUsdcPerEvent: leader?.maxUsdcPerEvent != null,
         }
     };
 }

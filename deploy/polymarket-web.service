@@ -1,0 +1,16 @@
+[Unit]
+Description=Polymarket Copy Bot Web Dashboard
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=polybot
+WorkingDirectory=/home/polybot/polymarket-copybot
+ExecStart=/usr/bin/pnpm --filter @polymarket-bot/web start
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+[Install]
+WantedBy=multi-user.target
