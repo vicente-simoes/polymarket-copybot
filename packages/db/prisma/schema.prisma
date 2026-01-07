@@ -29,6 +29,11 @@ model Settings {
   sellAlwaysAttempt       Boolean  @default(true)  // Never skip SELL for price/spread
   splitMergeAlwaysFollow  Boolean  @default(true)  // Always follow SPLIT/MERGE
   
+  // Phase 6: Risk Controls
+  skipMakerTrades         Boolean  @default(true)  // Skip if leader was maker (passive)
+  maxUsdcPerEvent         Float    @default(50)    // Max exposure per market event
+  maxOpenPositions        Int      @default(10)    // Max concurrent open positions
+  
   updatedAt               DateTime @updatedAt
 
   @@map("settings")
@@ -48,6 +53,8 @@ model Leader {
   ratio           Float?
   maxUsdcPerTrade Float?
   maxUsdcPerDay   Float?
+  maxUsdcPerEvent Float?
+  skipMakerTrades Boolean?
 
   tradeRaws   TradeRaw[]
   trades      Trade[]

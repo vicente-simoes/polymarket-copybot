@@ -27,6 +27,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Re-export PrismaClient and types
-export { PrismaClient } from './generated/prisma/client.js';
+export { PrismaClient, Prisma } from './generated/prisma/client.js';
 export * from './generated/prisma/models.js';
 export * from './generated/prisma/enums.js';

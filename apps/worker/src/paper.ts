@@ -1,5 +1,9 @@
 // Paper intent generator - creates paper trading intents using strategy engine
 import { prisma } from '@polymarket-bot/db';
+
+// Infer types from Prisma client to avoid export issues
+type Trade = NonNullable<Awaited<ReturnType<typeof prisma.trade.findFirst>>>;
+type Leader = NonNullable<Awaited<ReturnType<typeof prisma.leader.findFirst>>>;
 import {
     decidePaperIntentAsync,
     DecisionReasons,
@@ -11,8 +15,10 @@ import pino from 'pino';
 import { getLatestQuote } from './quotes';
 import { resolveMapping } from './mapping';
 import { simulateFillForIntent } from './fills';
-import { getExecutor } from './index.js';
+import { getExecutor } from './execution/executorService.js';
 import type { ExecutionInput } from './ports/ExecutionAdapter.js';
+import { riskEngine } from './execution/risk.js';
+import { getEffectiveConfig, type OperationType } from '@polymarket-bot/core';
 
 const logger = pino({ name: 'paper' });
 
@@ -72,6 +78,44 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         return existingIntent.id;
     }
 
+    // --- Phase 6: Risk Control ---
+    // 0. Determine Leader Role
+    let leaderRole = 'unknown';
+    if (trade.txHash) {
+        // Try to find linked LeaderFill for role info
+        const leaderFill = await prisma.leaderFill.findFirst({
+            where: { txHash: trade.txHash }
+        });
+        if (leaderFill) leaderRole = leaderFill.leaderRole;
+    }
+
+    // 1. Maker/Taker Check
+    const opType = trade.side as OperationType;
+    const makerCheck = await riskEngine.checkMakerTaker(trade.leaderId, leaderRole, opType);
+    if (!makerCheck.approved) {
+        await createSkipIntent(trade, 'SKIP_RISK_MAKER', makerCheck.reason);
+        return 'SKIPPED';
+    }
+
+    // 2. Portfolio Limits Check
+    // Estimate cost based on leader size or default max until we have real sizing
+    const config = await getEffectiveConfig(trade.leaderId, opType);
+    const estimatedUsdc = config.maxUsdcPerTrade || 10;
+
+    const portfolioCheck = await riskEngine.checkPortfolioLimits(trade.leaderId, estimatedUsdc, trade.conditionId);
+    if (!portfolioCheck.approved) {
+        await createSkipIntent(trade, 'SKIP_RISK_LIMIT', portfolioCheck.reason);
+        return 'SKIPPED';
+    }
+
+    // 3. Data Health Check (BookStore + Polygon watcher)
+    const dataHealthCheck = riskEngine.checkDataHealth();
+    if (!dataHealthCheck.approved) {
+        await createSkipIntent(trade, dataHealthCheck.reason || 'SKIP_DATA_UNHEALTHY');
+        return 'SKIPPED';
+    }
+    // ----------------------------
+
     // Resolve mapping
     const mapping = await resolveMapping(trade.conditionId, trade.outcome);
     if (!mapping) {
@@ -90,6 +134,15 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
 
         logger.info({ tradeId, reason: DecisionReasons.SKIP_MISSING_MAPPING }, 'Paper intent: SKIP (no mapping)');
         return intent.id;
+    }
+
+    // 4. Quote Freshness Check (only if we have a tokenId from mapping)
+    if (mapping.clobTokenId) {
+        const quoteFreshnessCheck = riskEngine.checkQuoteFreshness(mapping.clobTokenId);
+        if (!quoteFreshnessCheck.approved) {
+            await createSkipIntent(trade, quoteFreshnessCheck.reason || 'SKIP_QUOTE_STALE');
+            return 'SKIPPED';
+        }
     }
 
     // Get latest quote for market
@@ -199,6 +252,23 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
     }
 
     return intent.id;
+}
+
+async function createSkipIntent(trade: Trade, reasonShort: string, reasonLong?: string): Promise<void> {
+    await prisma.paperIntent.create({
+        data: {
+            tradeId: trade.id,
+            ratio: 0,
+            yourUsdcTarget: 0,
+            yourSide: trade.side,
+            limitPrice: 0,
+            decision: 'SKIP',
+            decisionReason: `${reasonShort}${reasonLong ? ': ' + reasonLong : ''}`,
+            createdAt: new Date(),
+        },
+    });
+
+    logger.info({ tradeId: trade.id, reason: reasonShort }, 'Paper intent: SKIP (Risk)');
 }
 
 /**

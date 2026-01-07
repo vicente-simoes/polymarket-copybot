@@ -16,6 +16,11 @@ export const DecisionReasons = {
     SKIP_NO_QUOTE: 'SKIP_NO_QUOTE',
     SKIP_BELOW_MIN: 'SKIP_BELOW_MIN',
     SKIP_SAME_PRICE_NOT_AVAILABLE: 'SKIP_SAME_PRICE_NOT_AVAILABLE',
+
+    // Phase 6: Data Health Gate
+    SKIP_BOOKSTORE_UNHEALTHY: 'SKIP_BOOKSTORE_UNHEALTHY',
+    SKIP_POLYGON_UNHEALTHY: 'SKIP_POLYGON_UNHEALTHY',
+    SKIP_QUOTE_STALE: 'SKIP_QUOTE_STALE',
 } as const;
 
 export type DecisionReason = typeof DecisionReasons[keyof typeof DecisionReasons];

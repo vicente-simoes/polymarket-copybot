@@ -19,6 +19,8 @@ import type { ExecutionAdapter } from './ports/ExecutionAdapter.js';
 import { createClobWsBookStore } from './marketdata/index.js';
 import { createPaperExecutor } from './execution/index.js';
 import { getTriggerMode, setTriggerMode } from './latencyTracker.js';
+import { setExecutor } from './execution/executorService.js';
+import { riskEngine } from './execution/risk.js';
 
 const logger = pino({
     name: 'worker',
@@ -72,6 +74,7 @@ async function runPollLoop(): Promise<void> {
     // Start PaperExecutor if in paper mode
     if (config.executionMode === 'paper') {
         executor = createPaperExecutor(bookStore);
+        setExecutor(executor);
         await executor.start();
 
         // Subscribe to fill events for logging
@@ -100,6 +103,9 @@ async function runPollLoop(): Promise<void> {
     if (currentMode === 'polygon' || currentMode === 'both') {
         await startPolygonWatcher();
     }
+
+    // Wire dependencies for RiskEngine (Phase 6 Data Health Gate)
+    riskEngine.setDependencies(bookStore, polygonSource);
 
     // Log trigger mode
     logger.info({
@@ -303,6 +309,4 @@ export function getBookStore(): BookStore | null {
 /**
  * Get the active execution adapter (or null if not started)
  */
-export function getExecutor(): ExecutionAdapter | null {
-    return executor;
-}
+
