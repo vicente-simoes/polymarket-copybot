@@ -5,6 +5,7 @@
     "scripts": {
         "dev": "tsx watch src/index.ts",
         "start": "tsx src/index.ts",
+        "start:prod": "node dist/index.js",
         "build": "tsc"
     },
     "dependencies": {
@@ -12,11 +13,14 @@
         "@polymarket-bot/db": "file:../../packages/db",
         "axios": "^1.7.0",
         "dotenv": "^17.2.3",
+        "ethers": "^6.16.0",
         "pino": "^9.0.0",
-        "pino-pretty": "^11.0.0"
+        "pino-pretty": "^11.0.0",
+        "ws": "^8.19.0"
     },
     "devDependencies": {
         "@types/node": "^20",
+        "@types/ws": "^8.18.1",
         "tsx": "^4.0.0",
         "typescript": "^5"
     }

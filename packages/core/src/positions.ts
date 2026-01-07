@@ -5,7 +5,7 @@ import { prisma } from '@polymarket-bot/db';
 import { OperationType } from './settings.js';
 
 // Re-export for external convenience
-export { OperationType };
+export type { OperationType };
 
 
 export interface PositionUpdate {
@@ -178,7 +178,7 @@ export async function recordPnlSnapshot() {
         where: { isClosed: false }
     });
 
-    const totalCostBasis = positions.reduce((sum, p) => sum + p.totalCostBasis, 0);
+    const totalCostBasis = positions.reduce((sum: number, p: { totalCostBasis: number }) => sum + p.totalCostBasis, 0);
 
     // For unrealized P&L, would need current market prices
     // Simplified: just track cost basis changes for now
@@ -186,7 +186,7 @@ export async function recordPnlSnapshot() {
     const unrealizedPnl = 0;
 
     const resolutions = await prisma.resolution.findMany();
-    const realizedPnl = resolutions.reduce((sum, r) => sum + r.realizedPnl, 0);
+    const realizedPnl = resolutions.reduce((sum: number, r: { realizedPnl: number }) => sum + r.realizedPnl, 0);
 
     await prisma.pnlSnapshot.create({
         data: {
@@ -222,10 +222,10 @@ export async function getPositionSummary() {
     const openPositions = await getOpenPositions();
     const closedPositions = await getClosedPositions();
 
-    const totalCostBasis = openPositions.reduce((sum, p) => sum + p.totalCostBasis, 0);
+    const totalCostBasis = openPositions.reduce((sum: number, p: { totalCostBasis: number }) => sum + p.totalCostBasis, 0);
     const totalRealizedPnl = closedPositions
-        .flatMap(p => p.resolutions)
-        .reduce((sum, r) => sum + r.realizedPnl, 0);
+        .flatMap((p: any) => p.resolutions)
+        .reduce((sum: number, r: { realizedPnl: number }) => sum + r.realizedPnl, 0);
 
     return {
         openPositions,

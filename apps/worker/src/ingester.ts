@@ -7,6 +7,7 @@ import { captureQuote } from './quotes';
 import { generatePaperIntentForTrade } from './paper';
 import { withRetry, sleep } from './retry';
 import { initLeaderHealth, updateLeaderHealth } from './health';
+import { recordLatencyEvent } from './latencyTracker.js';
 
 const logger = pino({ name: 'ingester' });
 
@@ -89,6 +90,18 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
             });
 
             newTradesCount++;
+
+            // Record latency event for comparison with Polygon source
+            await recordLatencyEvent({
+                dedupeKey: activity.transactionHash.toLowerCase(),
+                source: 'data_api',
+                detectedAt: new Date(),
+                tokenId: activity.asset || '',
+                conditionId: activity.conditionId,
+                leaderWallet: wallet.toLowerCase(),
+                side: activity.side,
+                usdcAmount: leaderUsdc,
+            });
 
             logger.info({
                 wallet,

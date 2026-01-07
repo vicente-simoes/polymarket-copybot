@@ -106,6 +106,7 @@ model Trade {
   raw         TradeRaw @relation(fields: [rawId], references: [id])
 
   paperIntents PaperIntent[]
+  executionAttempts ExecutionAttempt[]
 
   @@index([leaderId])
   @@index([conditionId])
@@ -400,8 +401,12 @@ enum LeaderRole {
 // Execution Attempt - One per leader fill we decide to copy (or skip)
 model ExecutionAttempt {
   id               String              @id @default(uuid())
-  leaderFillId     String
-  leaderFill       LeaderFill          @relation(fields: [leaderFillId], references: [id])
+  
+  // Source identity - at least one should be set
+  leaderFillId     String?             // FK to LeaderFill (new flow)
+  leaderFill       LeaderFill?         @relation(fields: [leaderFillId], references: [id])
+  tradeId          String?             // FK to Trade (legacy flow)
+  trade            Trade?              @relation(fields: [tradeId], references: [id])
 
   // Execution mode
   mode             ExecutionMode
@@ -476,4 +481,53 @@ model PolygonCursor {
 
   @@unique([exchangeAddress, leaderAddress, role])
   @@map("polygon_cursors")
+}
+
+// ============================================================================
+// Phase 3.5: Latency Tracking + Dashboard Controls
+// ============================================================================
+
+// Latency Event - Track each detection event for latency comparison
+model LatencyEvent {
+  id            String   @id @default(uuid())
+  dedupeKey     String   // txHash|logIndex - links both sources
+  source        String   // 'data_api' | 'polygon'
+  detectedAt    DateTime // When this source detected the trade
+  tokenId       String
+  conditionId   String
+  leaderWallet  String
+  side          String   // BUY | SELL
+  usdcAmount    Float
+  createdAt     DateTime @default(now())
+
+  @@index([dedupeKey])
+  @@index([createdAt])
+  @@map("latency_events")
+}
+
+// Latency Stats - Aggregated statistics for dashboard display
+model LatencyStats {
+  id              String   @id @default(uuid())
+  period          String   // 'hour' | 'day' | 'week'
+  periodStart     DateTime
+  polygonWins     Int      @default(0)
+  dataApiWins     Int      @default(0)
+  ties            Int      @default(0)
+  avgPolygonMs    Float?   // Average detection time for Polygon
+  avgDataApiMs    Float?   // Average detection time for Data API
+  avgDeltaMs      Float?   // Average difference (positive = Polygon faster)
+  totalEvents     Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@unique([period, periodStart])
+  @@map("latency_stats")
+}
+
+// Worker Config - Store runtime configuration changeable from dashboard
+model WorkerConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("worker_config")
 }

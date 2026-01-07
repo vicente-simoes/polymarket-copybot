@@ -11,6 +11,8 @@ import pino from 'pino';
 import { getLatestQuote } from './quotes';
 import { resolveMapping } from './mapping';
 import { simulateFillForIntent } from './fills';
+import { getExecutor } from './index.js';
+import type { ExecutionInput } from './ports/ExecutionAdapter.js';
 
 const logger = pino({ name: 'paper' });
 
@@ -167,8 +169,34 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         }, 'Paper intent: SKIP');
     }
 
-    // Simulate the fill immediately
-    await simulateFillForIntent(intent.id);
+    // Execute the trade (use PaperExecutor if available, else legacy fill simulation)
+    if (decision.decision === 'TRADE') {
+        const executor = getExecutor();
+        if (executor && mapping.clobTokenId) {
+            // Use new depth-based executor
+            const execInput: ExecutionInput = {
+                tradeId: trade.id,
+                tokenId: mapping.clobTokenId,
+                conditionId: trade.conditionId,
+                outcome: trade.outcome,
+                side: trade.side as 'BUY' | 'SELL',
+                sizeShares: (decision.yourUsdcTarget || 0) / (decision.limitPrice || Number(trade.leaderPrice)),
+                sizeUsdc: decision.yourUsdcTarget || 0,
+                limitPrice: decision.limitPrice || Number(trade.leaderPrice),
+                ttlMs: 30000,
+                leaderPrice: Number(trade.leaderPrice),
+                leaderSize: Number(trade.leaderSize),
+                ratio,
+            };
+            await executor.submitMarketableLimit(execInput);
+        } else {
+            // Fallback to legacy fill simulation
+            await simulateFillForIntent(intent.id);
+        }
+    } else {
+        // SKIP decisions still use legacy for record-keeping
+        await simulateFillForIntent(intent.id);
+    }
 
     return intent.id;
 }

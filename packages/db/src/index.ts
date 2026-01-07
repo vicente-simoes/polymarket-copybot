@@ -3,7 +3,7 @@
 
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from './generated/prisma/client';
+import { PrismaClient } from './generated/prisma/client.js';
 
 // Create connection pool
 const connectionString = process.env.DATABASE_URL ?? 'postgresql://polymarket:polymarket@localhost:5432/polymarket';
@@ -27,6 +27,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Re-export PrismaClient and types
-export { PrismaClient } from './generated/prisma/client';
-export * from './generated/prisma/models';
-export * from './generated/prisma/enums';
+export { PrismaClient } from './generated/prisma/client.js';
+export * from './generated/prisma/models.js';
+export * from './generated/prisma/enums.js';
