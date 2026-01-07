@@ -83,6 +83,19 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
             // Wait for the provider to be ready (connection established)
             // This ensures we catch connection errors early
             await this.wsProvider.ready;
+
+            // FIX: Attach error listener to underlying socket to prevent Uncaught Exception
+            // ethers.js v6 doesn't always propagate socket errors to the provider 'error' event
+            const rawSocket = (this.wsProvider as any).websocket;
+            if (rawSocket) {
+                rawSocket.on('error', (err: any) => {
+                    // Log it but prevent crash
+                    const serialized = err instanceof Error
+                        ? { message: err.message, name: err.name }
+                        : err;
+                    logger.error({ error: serialized }, 'Underlying WebSocket error (caught)');
+                });
+            }
         } catch (wsError) {
             const serialized = wsError instanceof Error
                 ? { message: wsError.message, stack: wsError.stack, name: wsError.name }
