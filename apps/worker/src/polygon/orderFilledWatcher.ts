@@ -92,10 +92,16 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
             throw wsError; // Re-throw so caller knows start() failed
         }
 
-        // Start background backfill (don't await)
-        this.runBackgroundBackfill().catch(err => {
-            logger.error({ error: err }, 'Background backfill process failed');
-        });
+        // Start background backfill after a delay (don't await)
+        // Delay helps avoid rate limits - let WebSocket stabilize first
+        setTimeout(() => {
+            this.runBackgroundBackfill().catch(err => {
+                const serialized = err instanceof Error
+                    ? { message: err.message, name: err.name }
+                    : err;
+                logger.error({ error: serialized }, 'Background backfill process failed');
+            });
+        }, 5000);
 
         // Subscribe to new logs
         await this.subscribeToLogs();
@@ -224,7 +230,7 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
 
     private async gapFillForLeader(exchange: string, leader: LeaderInfo): Promise<number> {
         const MAX_BLOCK_RANGE = 10; // Alchemy Free Tier limit
-        const THROTTLE_MS = 100;    // Limit to ~10 req/sec max per leader
+        const THROTTLE_MS = 500;    // Limit to ~2 req/sec (safe for free tier with multiple operations)
 
         // Get last processed block from cursor
         const cursor = await prisma.polygonCursor.findFirst({
