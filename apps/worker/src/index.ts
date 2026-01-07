@@ -101,7 +101,24 @@ async function runPollLoop(): Promise<void> {
 
     // Start Polygon watcher if needed
     if (currentMode === 'polygon' || currentMode === 'both') {
-        await startPolygonWatcher();
+        try {
+            await startPolygonWatcher();
+        } catch (error) {
+            const serialized = error instanceof Error
+                ? { message: error.message, name: error.name }
+                : error;
+            logger.warn({ error: serialized }, 'Failed to start Polygon watcher, falling back to data_api mode');
+
+            // If polygon-only mode, fallback to data_api
+            if (currentMode === 'polygon') {
+                currentMode = 'data_api';
+                await setTriggerMode('data_api');
+                logger.info('Switched to data_api mode due to Polygon failure');
+            } else {
+                // In 'both' mode, just continue with data_api (polygon is optional)
+                logger.info('Continuing with data_api only (Polygon unavailable)');
+            }
+        }
     }
 
     // Wire dependencies for RiskEngine (Phase 6 Data Health Gate)
@@ -111,7 +128,7 @@ async function runPollLoop(): Promise<void> {
     logger.info({
         triggerMode: currentMode,
         dataApiEnabled: currentMode === 'data_api' || currentMode === 'both',
-        polygonEnabled: currentMode === 'polygon' || currentMode === 'both',
+        polygonEnabled: polygonSource !== null,
     }, 'Trigger sources configured');
 
     while (isRunning) {
