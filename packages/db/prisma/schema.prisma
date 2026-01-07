@@ -30,7 +30,7 @@ model Settings {
   splitMergeAlwaysFollow  Boolean  @default(true)  // Always follow SPLIT/MERGE
   
   // Phase 6: Risk Controls
-  skipMakerTrades         Boolean  @default(true)  // Skip if leader was maker (passive)
+  skipMakerTrades         Boolean  @default(false) // Skip if leader was maker (passive) - false by default since price guards protect us
   maxUsdcPerEvent         Float    @default(50)    // Max exposure per market event
   maxOpenPositions        Int      @default(10)    // Max concurrent open positions
   
