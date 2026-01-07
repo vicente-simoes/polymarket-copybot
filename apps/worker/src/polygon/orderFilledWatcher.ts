@@ -68,6 +68,12 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
         this.httpProvider = new ethers.JsonRpcProvider(config.polygonHttpUrl);
         this.wsProvider = new ethers.WebSocketProvider(config.polygonWsUrl);
 
+        // Prevent unhandled 'error' events from crashing the process
+        this.wsProvider.on('error', (error) => {
+            this.errorCount++;
+            logger.error({ error }, 'Polygon WebSocket provider error');
+        });
+
         // Start background backfill (don't await)
         this.runBackgroundBackfill().catch(err => {
             logger.error({ error: err }, 'Background backfill process failed');

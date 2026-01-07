@@ -54,7 +54,7 @@ export interface WorkerConfig {
  */
 function parseConfig(): WorkerConfig {
     // Parse trigger mode
-    const triggerModeRaw = process.env.TRIGGER_MODE || 'data_api';
+    const triggerModeRaw = process.env.TRIGGER_MODE || 'both';
     if (!['data_api', 'polygon', 'both'].includes(triggerModeRaw)) {
         throw new Error(`Invalid TRIGGER_MODE: ${triggerModeRaw}. Must be 'data_api', 'polygon', or 'both'`);
     }
