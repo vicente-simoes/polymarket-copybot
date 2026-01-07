@@ -83,6 +83,12 @@ export function decidePaperIntent(input: DecideIntentInput): PaperIntentDecision
         return result;
     }
 
+    // Check: price above threshold (only for BUY)
+    if (trade.side === 'BUY' && config.skipAbovePrice !== null && trade.leaderPrice >= config.skipAbovePrice) {
+        result.decisionReason = DecisionReasons.SKIP_ABOVE_PRICE;
+        return result;
+    }
+
     // Check: allowlist
     if (config.allowlist !== null && !config.allowlist.includes(trade.conditionId)) {
         result.decisionReason = DecisionReasons.SKIP_MARKET_NOT_ALLOWED;
