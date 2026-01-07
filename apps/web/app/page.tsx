@@ -9,8 +9,8 @@ export const dynamic = 'force-dynamic'
 async function getStats() {
   const [leaderCount, tradeCount, paperIntentCount] = await Promise.all([
     prisma.leader.count({ where: { enabled: true } }),
-    prisma.trade.count(),
-    prisma.paperIntent.count(),
+    prisma.trade.count({ where: { isBackfill: false } }),
+    prisma.paperIntent.count(),  // Paper intents are only created for non-backfill trades
   ])
 
   return { leaderCount, tradeCount, paperIntentCount }
