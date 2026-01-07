@@ -64,15 +64,33 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
             logger.warn('No enabled leaders found, watcher will not receive events');
         }
 
-        // Create providers
+        // Create HTTP provider
         this.httpProvider = new ethers.JsonRpcProvider(config.polygonHttpUrl);
-        this.wsProvider = new ethers.WebSocketProvider(config.polygonWsUrl);
 
-        // Prevent unhandled 'error' events from crashing the process
-        this.wsProvider.on('error', (error) => {
+        // Create WS provider with error handling
+        try {
+            this.wsProvider = new ethers.WebSocketProvider(config.polygonWsUrl);
+
+            // Prevent unhandled 'error' events from crashing the process
+            this.wsProvider.on('error', (error) => {
+                this.errorCount++;
+                const serialized = error instanceof Error
+                    ? { message: error.message, stack: error.stack, name: error.name }
+                    : error;
+                logger.error({ error: serialized }, 'Polygon WebSocket provider error');
+            });
+
+            // Wait for the provider to be ready (connection established)
+            // This ensures we catch connection errors early
+            await this.wsProvider.ready;
+        } catch (wsError) {
+            const serialized = wsError instanceof Error
+                ? { message: wsError.message, stack: wsError.stack, name: wsError.name }
+                : wsError;
+            logger.error({ error: serialized }, 'Failed to connect to Polygon WebSocket');
             this.errorCount++;
-            logger.error({ error }, 'Polygon WebSocket provider error');
-        });
+            throw wsError; // Re-throw so caller knows start() failed
+        }
 
         // Start background backfill (don't await)
         this.runBackgroundBackfill().catch(err => {

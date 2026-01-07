@@ -245,12 +245,20 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Unhandled rejection handler
 process.on('unhandledRejection', (reason, promise) => {
-    logger.error({ reason }, 'Unhandled promise rejection');
+    // Serialize error properly
+    const serialized = reason instanceof Error
+        ? { message: reason.message, stack: reason.stack, name: reason.name }
+        : reason;
+    logger.error({ reason: serialized }, 'Unhandled promise rejection');
 });
 
 // Uncaught exception handler
 process.on('uncaughtException', (error) => {
-    logger.fatal({ error }, 'Uncaught exception - shutting down');
+    // Serialize error properly for logging
+    const serialized = error instanceof Error
+        ? { message: error.message, stack: error.stack, name: error.name }
+        : error;
+    logger.fatal({ error: serialized }, 'Uncaught exception - shutting down');
     process.exit(1);
 });
 
