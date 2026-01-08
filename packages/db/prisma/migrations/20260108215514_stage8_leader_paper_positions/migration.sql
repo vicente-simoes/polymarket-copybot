@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "settings" ADD COLUMN     "catchUpBuyMaxAgeSec" INTEGER NOT NULL DEFAULT 300,
+ADD COLUMN     "catchUpBuyMaxWorseBps" INTEGER NOT NULL DEFAULT 20,
+ADD COLUMN     "catchUpBuyRequireBetter" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "maxLiveLagSec" INTEGER NOT NULL DEFAULT 15;

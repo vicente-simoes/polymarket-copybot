@@ -68,6 +68,13 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         return null;
     }
 
+    // Stage 1.1: Never create paper intents for backfill trades (fix phantom positions bug)
+    if (trade.isBackfill) {
+        logger.debug({ tradeId }, 'Skipping backfill trade - no paper intent generated');
+        await createSkipIntent(trade, 'SKIP_BACKFILL', 'Trade was ingested during backfill - not eligible for paper trading');
+        return null;
+    }
+
     // Check if paper intent already exists for this trade
     const existingIntent = await prisma.paperIntent.findFirst({
         where: { tradeId: trade.id },
@@ -178,6 +185,48 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         rawId: quoteRecord.rawId,
     } : null;
 
+    // Stage 8.3: Proportional sell sizing
+    // For SELL trades, calculate size based on leader's position reduction vs our position
+    let proportionalSellUsdc: number | null = null;
+    if (trade.side === 'SELL') {
+        const { getPaperPosition, calculateProportionalSellSize } = await import('./ingest/paperPosition.js');
+        const { getLeaderPosition } = await import('./ingest/leaderPosition.js');
+
+        // Get our paper position
+        const ourPosition = await getPaperPosition(trade.conditionId, trade.outcome.toUpperCase());
+
+        // Get leader's position BEFORE this sell (note: was already updated in ingestTrade, need pre-trade)
+        // We stored this in ingestTrade result, but since we're in a separate call, we compute it
+        // leaderPreSellShares = current shares + this sell size (since position was already decremented)
+        const leaderCurrentShares = await getLeaderPosition(trade.leaderId, trade.conditionId, trade.outcome);
+        const leaderPreSellShares = leaderCurrentShares + Number(trade.leaderSize);
+
+        if (ourPosition.shares <= 0) {
+            // We have no position to sell
+            await createSkipIntent(trade, 'SKIP_NO_POSITION', 'No paper position to sell for this condition/outcome');
+            return 'SKIPPED';
+        }
+
+        // Calculate proportional sell shares
+        const proportionalShares = calculateProportionalSellSize(
+            ourPosition.shares,
+            leaderPreSellShares,
+            Number(trade.leaderSize)
+        );
+
+        // Convert to USDC using leader's price
+        proportionalSellUsdc = proportionalShares * Number(trade.leaderPrice);
+
+        logger.debug({
+            tradeId,
+            ourShares: ourPosition.shares,
+            leaderPreSellShares,
+            leaderSellSize: Number(trade.leaderSize),
+            proportionalShares,
+            proportionalSellUsdc,
+        }, 'Proportional sell calculated');
+    }
+
     // Run strategy engine with DB-based config
     const decision = await decidePaperIntentAsync({
         trade: normalizedTrade,
@@ -185,6 +234,11 @@ export async function generatePaperIntentForTrade(tradeId: string): Promise<stri
         leaderId: trade.leaderId,
         riskState: currentRiskState,
     });
+
+    // Stage 8.3: Override USDC target for proportional sells
+    if (proportionalSellUsdc !== null && decision.decision === 'TRADE') {
+        decision.yourUsdcTarget = proportionalSellUsdc;
+    }
 
     // Get the ratio used (for logging/tracking)
     const ratio = getLegacyRatio();
@@ -276,11 +330,13 @@ async function createSkipIntent(trade: Trade, reasonShort: string, reasonLong?: 
  */
 export async function generateMissingPaperIntents(): Promise<number> {
     // Find trades without paper intents
+    // Stage 1.1: Exclude backfill trades to prevent phantom positions
     const tradesWithoutIntents = await prisma.trade.findMany({
         where: {
             paperIntents: {
                 none: {},
             },
+            isBackfill: false,  // Never generate intents for backfill trades
         },
         orderBy: { tradeTs: 'asc' },
         take: 100, // Batch size

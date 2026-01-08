@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Settings as SettingsIcon, Check, AlertCircle } from 'lucide-react'
+import { ResetButton } from './reset-button'
 
 async function getSettings() {
     let settings = await prisma.settings.findUnique({ where: { id: 1 } })
@@ -34,6 +35,11 @@ async function updateSettings(formData: FormData) {
         maxUsdcPerEvent: Math.max(1, Math.min(1000, parseFloat(formData.get('maxUsdcPerEvent') as string) || 50)),
         maxOpenPositions: Math.max(1, Math.min(100, parseFloat(formData.get('maxOpenPositions') as string) || 10)),
         skipAbovePrice: formData.get('skipAbovePrice')?.toString().trim() ? Math.max(0.01, Math.min(0.99, parseFloat(formData.get('skipAbovePrice') as string))) : null,
+        // Stage 9.1: Catch-up policies
+        maxLiveLagSec: Math.max(1, Math.min(120, parseInt(formData.get('maxLiveLagSec') as string) || 15)),
+        catchUpBuyMaxAgeSec: Math.max(0, Math.min(3600, parseInt(formData.get('catchUpBuyMaxAgeSec') as string) || 300)),
+        catchUpBuyRequireBetter: formData.get('catchUpBuyRequireBetter') === 'on',
+        catchUpBuyMaxWorseBps: Math.max(0, Math.min(500, parseInt(formData.get('catchUpBuyMaxWorseBps') as string) || 20)),
     }
 
     await prisma.settings.upsert({
@@ -297,6 +303,87 @@ export default async function SettingsPage(
                     </CardContent>
                 </Card>
 
+                {/* Stage 9.1: Catch-Up Policies */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Catch-Up Policies</CardTitle>
+                        <CardDescription>
+                            Controls for how "stale" trades are handled. Trades older than maxLiveLagSec are considered catch-up trades.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div className="space-y-2">
+                                <Label htmlFor="maxLiveLagSec">
+                                    Max Live Lag (sec)
+                                    <span className="text-muted-foreground ml-2 font-normal">
+                                        ({settings.maxLiveLagSec}s)
+                                    </span>
+                                </Label>
+                                <Input
+                                    id="maxLiveLagSec"
+                                    name="maxLiveLagSec"
+                                    type="number"
+                                    step="1"
+                                    min="1"
+                                    max="120"
+                                    defaultValue={settings.maxLiveLagSec}
+                                />
+                                <p className="text-xs text-muted-foreground">Trades within this window are &quot;live&quot;</p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="catchUpBuyMaxAgeSec">
+                                    Catch-Up Buy Max Age (sec)
+                                    <span className="text-muted-foreground ml-2 font-normal">
+                                        ({settings.catchUpBuyMaxAgeSec}s)
+                                    </span>
+                                </Label>
+                                <Input
+                                    id="catchUpBuyMaxAgeSec"
+                                    name="catchUpBuyMaxAgeSec"
+                                    type="number"
+                                    step="1"
+                                    min="0"
+                                    max="3600"
+                                    defaultValue={settings.catchUpBuyMaxAgeSec}
+                                />
+                                <p className="text-xs text-muted-foreground">Max age for catch-up buys (0 = disabled)</p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="catchUpBuyMaxWorseBps">
+                                    Max Worse (bps)
+                                    <span className="text-muted-foreground ml-2 font-normal">
+                                        ({settings.catchUpBuyMaxWorseBps} bps)
+                                    </span>
+                                </Label>
+                                <Input
+                                    id="catchUpBuyMaxWorseBps"
+                                    name="catchUpBuyMaxWorseBps"
+                                    type="number"
+                                    step="1"
+                                    min="0"
+                                    max="500"
+                                    defaultValue={settings.catchUpBuyMaxWorseBps}
+                                />
+                                <p className="text-xs text-muted-foreground">Max bps worse than leader price</p>
+                            </div>
+                            <div className="flex items-center gap-3 pt-6">
+                                <input
+                                    id="catchUpBuyRequireBetter"
+                                    name="catchUpBuyRequireBetter"
+                                    type="checkbox"
+                                    defaultChecked={settings.catchUpBuyRequireBetter}
+                                    className="size-4 rounded border-border"
+                                />
+                                <Label htmlFor="catchUpBuyRequireBetter" className="font-normal cursor-pointer">
+                                    <span className="font-medium">Require Better Price</span>
+                                    <span className="block text-xs text-muted-foreground">Only catch-up if price is same or better</span>
+                                </Label>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {/* Submit */}
                 <div className="flex justify-end">
                     <Button type="submit" size="lg">
@@ -304,6 +391,22 @@ export default async function SettingsPage(
                     </Button>
                 </div>
             </form>
+
+            {/* Stage 9.3: Reset Paper State */}
+            <Card className="border-destructive/30">
+                <CardHeader>
+                    <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                    <CardDescription>
+                        Reset paper trading state. This will delete all paper intents, fills, and positions.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <form id="reset-form" action="/api/reset" method="POST">
+                        <input type="hidden" name="confirm" value="true" />
+                        <ResetButton />
+                    </form>
+                </CardContent>
+            </Card>
 
             {/* Current Values Summary */}
             <Card className="bg-muted/50">

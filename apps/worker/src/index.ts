@@ -111,12 +111,25 @@ async function runPollLoop(): Promise<void> {
 
     // Initialize trigger mode from DB or Config
     // If DB is empty, seed it with Config
-    let currentMode = await getTriggerMode();
-    if (currentMode === 'data_api' && config.triggerMode !== 'data_api') {
+    const envTriggerMode = config.triggerMode;  // from TRADE_DETECTION_MODE or TRIGGER_MODE env
+    const dbTriggerMode = await getTriggerMode();  // from WorkerConfig table
+    let currentMode = dbTriggerMode;
+    let modeSource = 'database';
+
+    if (dbTriggerMode === 'data_api' && envTriggerMode !== 'data_api') {
         // Seed DB with env config if DB is default but env is specific
-        await setTriggerMode(config.triggerMode);
-        currentMode = config.triggerMode;
+        await setTriggerMode(envTriggerMode);
+        currentMode = envTriggerMode;
+        modeSource = 'env (seeded to DB)';
     }
+
+    // Stage 0.2: Log effective mode to prevent silent misconfiguration
+    logger.info({
+        envTriggerMode,
+        dbTriggerMode,
+        effectiveTriggerMode: currentMode,
+        modeSource,
+    }, 'Trigger mode resolved - check these values match your intent');
 
     // Start Polygon watcher if needed
     if (currentMode === 'polygon' || currentMode === 'both') {
@@ -195,17 +208,20 @@ async function runPollLoop(): Promise<void> {
             }
 
             // Generate paper intents for any trades that are missing them
-            // (e.g., after bug fixes or for trades that had mapping issues)
-            const missingIntents = await generateMissingPaperIntents();
-            if (missingIntents > 0) {
-                logger.info({ count: missingIntents }, 'Generated missing paper intents');
-            }
+            // Stage 1.2: Gate behind env flag (default OFF) - these should rarely be needed
+            // once ingestion is reliable, and can create phantom positions if misused
+            if (process.env.GENERATE_MISSING_ENABLED === 'true') {
+                const missingIntents = await generateMissingPaperIntents();
+                if (missingIntents > 0) {
+                    logger.info({ count: missingIntents }, 'Generated missing paper intents');
+                }
 
-            // Simulate fills for any paper intents that don't have them yet
-            // This updates position tracking for P&L
-            const simulatedFills = await simulateMissingFills();
-            if (simulatedFills > 0) {
-                logger.info({ count: simulatedFills }, 'Simulated paper fills');
+                // Simulate fills for any paper intents that don't have them yet
+                // This updates position tracking for P&L
+                const simulatedFills = await simulateMissingFills();
+                if (simulatedFills > 0) {
+                    logger.info({ count: simulatedFills }, 'Simulated paper fills');
+                }
             }
         } catch (error) {
             logger.error({ error }, 'Poll cycle failed');

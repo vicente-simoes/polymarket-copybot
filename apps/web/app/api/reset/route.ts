@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@polymarket-bot/db';
 
-export async function POST() {
+/**
+ * Stage 9.3: Reset Paper State API
+ * Deletes all paper trading data while preserving Leaders and Settings.
+ */
+export async function POST(request: Request) {
     try {
         // Delete in correct order for FK constraints
-        // Using deleteMany for each table
+        // Stage 8.3: Include new position models
+        await prisma.paperPosition.deleteMany({});
+        await prisma.leaderPosition.deleteMany({});
 
-        // First: Delete dependent records
+        // Paper trading records
         await prisma.resolution.deleteMany({});
         await prisma.pnlSnapshot.deleteMany({});
         await prisma.paperFill.deleteMany({});
@@ -15,15 +21,24 @@ export async function POST() {
         await prisma.quote.deleteMany({});
         await prisma.marketMapping.deleteMany({});
 
-        // Finally: Delete trades and raw payloads
+        // Trades and raw payloads
         await prisma.trade.deleteMany({});
         await prisma.tradeRaw.deleteMany({});
         await prisma.quoteRaw.deleteMany({});
 
-        return NextResponse.json({
-            success: true,
-            message: 'All paper trading data has been reset. Leaders and settings preserved.',
+        // Reset leader API cursors to start fresh
+        await prisma.leader.updateMany({
+            data: {
+                apiCursorTs: null,
+                apiCursorInitialized: false,
+                apiCursorUpdatedAt: null,
+            }
         });
+
+        console.log('[Reset API] Paper state reset complete');
+
+        // Redirect back to settings page
+        return NextResponse.redirect(new URL('/settings?reset=true', request.url));
     } catch (error) {
         console.error('Failed to reset paper trading data:', error);
         return NextResponse.json(
@@ -31,4 +46,12 @@ export async function POST() {
             { status: 500 }
         );
     }
+}
+
+export async function GET() {
+    return NextResponse.json({
+        message: 'Reset Paper State API',
+        usage: 'POST to reset all paper trading data',
+        warning: 'This action cannot be undone',
+    });
 }

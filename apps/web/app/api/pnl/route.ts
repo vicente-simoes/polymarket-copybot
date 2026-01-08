@@ -45,9 +45,12 @@ export async function GET(request: Request) {
             break;
     }
 
-    // Get open positions
+    // Stage 9.2: Get open positions - only those with shares > 0 and not closed
     const openPositions = await prisma.position.findMany({
-        where: { isClosed: false },
+        where: {
+            isClosed: false,
+            shares: { gt: 0 },  // Only positions with actual shares
+        },
         orderBy: { updatedAt: 'desc' },
     });
 

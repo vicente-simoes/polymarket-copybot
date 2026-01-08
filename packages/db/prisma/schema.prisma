@@ -35,6 +35,16 @@ model Settings {
   maxOpenPositions        Int      @default(10)    // Max concurrent open positions
   skipAbovePrice          Float?                   // Skip BUY if price >= this threshold (e.g., 0.97 = 97¢)
   
+// Stage 2.2: Startup mode for cursor-based polling
+  startupMode             String   @default("flat")  // "flat" = start from now, "warm" = backfill recent history
+  warmStartSeconds        Int      @default(900)     // seconds to look back when warm starting (15 min default)
+  
+  // Stage 9.1: Catch-up policies
+  maxLiveLagSec           Int      @default(15)      // max seconds a trade can lag and still be "live"
+  catchUpBuyMaxAgeSec     Int      @default(300)     // max age (seconds) for catch-up buys
+  catchUpBuyRequireBetter Boolean  @default(true)    // require price to be same or better for catch-up
+  catchUpBuyMaxWorseBps   Int      @default(20)      // max bps worse for catch-up (if requireBetter=false)
+  
   updatedAt               DateTime @updatedAt
 
   @@map("settings")
@@ -57,11 +67,32 @@ model Leader {
   maxUsdcPerEvent Float?
   skipMakerTrades Boolean?
 
+  // Stage 2.1: API cursor for incremental polling
+  apiCursorTs          DateTime?  // last processed activity timestamp
+  apiCursorInitialized Boolean    @default(false)  // whether cursor has been initialized
+  apiCursorUpdatedAt   DateTime?  // when cursor was last updated
+
   tradeRaws   TradeRaw[]
   trades      Trade[]
   leaderFills LeaderFill[]
+  positions   LeaderPosition[]
 
   @@map("leaders")
+}
+
+// Stage 8.1: Leader Position - Track leader's share holdings
+model LeaderPosition {
+  id          String   @id @default(uuid())
+  leaderId    String
+  leader      Leader   @relation(fields: [leaderId], references: [id])
+  conditionId String
+  outcome     String   // YES/NO
+  shares      Decimal  @db.Decimal(20, 10) @default(0)  // Current share count
+  updatedAt   DateTime @updatedAt
+
+  @@unique([leaderId, conditionId, outcome])
+  @@index([leaderId])
+  @@map("leader_positions")
 }
 
 // ============================================================================
@@ -110,6 +141,11 @@ model Trade {
   leaderUsdc  Decimal  @db.Decimal(20, 10) // notional
   title       String?  // market title, nullable
   isBackfill  Boolean  @default(false) // true if from initial leader backfill (historical)
+  
+  // Stage 5.1: Chain correlation fields (filled from Polygon, API leaves null)
+  blockNumber Int?     // block number from Polygon event
+  logIndex    Int?     // log index within the block
+  
   rawId       String   @unique
   raw         TradeRaw @relation(fields: [rawId], references: [id])
 
@@ -262,6 +298,7 @@ model PaperFill {
   intent         PaperIntent @relation(fields: [intentId], references: [id])
   filled         Boolean
   fillPrice      Decimal?  @db.Decimal(20, 10)
+  fillShares     Decimal?  @db.Decimal(20, 10)  // Stage 8.3: Filled shares (for position tracking)
   fillAt         DateTime?
   slippageAbs    Decimal?  @db.Decimal(20, 10)
   slippagePct    Decimal?  @db.Decimal(10, 6)
@@ -270,6 +307,22 @@ model PaperFill {
   quote          Quote?    @relation(fields: [quoteId], references: [id])
 
   @@map("paper_fills")
+}
+
+// Stage 8.3: Paper Position - Authoritative current paper holdings
+// Updated transactionally on PaperFill creation (not from intents or backfill)
+model PaperPosition {
+  id            String   @id @default(uuid())
+  conditionId   String
+  outcome       String   // YES/NO
+  shares        Decimal  @db.Decimal(20, 10) @default(0)  // Current share holdings
+  costBasisUsdc Decimal  @db.Decimal(20, 10) @default(0)  // Total cost basis in USDC
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([conditionId, outcome])
+  @@index([conditionId])
+  @@map("paper_positions")
 }
 
 // ============================================================================

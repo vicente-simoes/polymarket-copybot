@@ -103,6 +103,11 @@ export class RiskEngine {
     /**
      * Check data health (BookStore + Polygon watcher connectivity)
      * This is the Phase 6 "Data Health Gate"
+     * 
+     * Stage 10.1: Mode rules:
+     * - mode=api: Polygon health never blocks
+     * - mode=polygon: Polygon health gates (blocks if unhealthy)
+     * - mode=both: Degrade gracefully (warn but don't block if Polygon down)
      */
     checkDataHealth(): RiskCheckResult {
         const config = getConfig();
@@ -122,19 +127,30 @@ export class RiskEngine {
             }
         }
 
-        // 2. Polygon watcher health (if using polygon or both trigger modes)
-        if (triggerMode === 'polygon' || triggerMode === 'both') {
+        // 2. Polygon watcher health - mode-aware gating
+        // Stage 10.1: Different behavior based on trigger mode
+        if (triggerMode === 'polygon') {
+            // POLYGON-ONLY mode: Polygon health MUST gate
             if (!this.polygonSource) {
-                logger.warn('PolygonSource not available for health check');
+                logger.warn('PolygonSource not available for health check (polygon mode)');
                 return { approved: false, reason: 'SKIP_POLYGON_UNHEALTHY' };
             }
 
             if (!this.polygonSource.isHealthy()) {
                 const summary = this.polygonSource.getHealthSummary();
-                logger.warn({ summary }, 'Polygon watcher unhealthy, skipping trade');
+                logger.warn({ summary }, 'Polygon watcher unhealthy - blocking trade (polygon mode)');
                 return { approved: false, reason: 'SKIP_POLYGON_UNHEALTHY' };
             }
+        } else if (triggerMode === 'both') {
+            // BOTH mode: Degrade gracefully - warn but don't block
+            if (this.polygonSource && !this.polygonSource.isHealthy()) {
+                const summary = this.polygonSource.getHealthSummary();
+                logger.warn({ summary, mode: 'both' },
+                    'Polygon watcher unhealthy - degrading to API-only mode (not blocking)');
+                // Don't block - API will continue copying
+            }
         }
+        // API-ONLY mode: Polygon health never checked/blocks
 
         return { approved: true };
     }

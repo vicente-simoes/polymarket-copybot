@@ -1,7 +1,7 @@
 // Trade ingester - stores raw and normalized trades from Polymarket
 import { prisma } from '@polymarket-bot/db';
 import pino from 'pino';
-import { fetchWalletActivity, buildDedupeKey, PolymarketActivity } from './polymarket';
+import { fetchWalletActivitySince, buildDedupeKey, PolymarketActivity, getStartupSettings } from './polymarket';
 import { resolveMapping } from './mapping';
 import { captureQuote } from './quotes';
 import { generatePaperIntentForTrade } from './paper';
@@ -14,48 +14,138 @@ const logger = pino({ name: 'ingester' });
 // Stagger delay between leaders to avoid API bursts
 const LEADER_STAGGER_MS = parseInt(process.env.LEADER_STAGGER_MS || '500', 10);
 
+// Page size for cursor-based polling
+const CURSOR_PAGE_SIZE = 500;
+
 /**
- * Ingest trades for a single leader wallet
+ * Stage 2.3: Ingest trades for a single leader wallet using cursor-based polling
  * Returns the number of new trades stored
  */
 export async function ingestTradesForLeader(leaderId: string, wallet: string): Promise<number> {
-    const limit = parseInt(process.env.LEADER_FETCH_LIMIT || '50', 10);
+    // Get the leader record to check cursor state
+    const leader = await prisma.leader.findUnique({
+        where: { id: leaderId },
+    });
 
-    // Fetch trades from Polymarket API
-    const activities = await fetchWalletActivity(wallet, limit);
-
-    if (activities.length === 0) {
-        logger.debug({ wallet }, 'No trades found');
+    if (!leader) {
+        logger.error({ leaderId }, 'Leader not found');
         return 0;
     }
 
-    // Check if this is the initial backfill (no existing trades for this leader)
-    const existingTradeCount = await prisma.trade.count({
-        where: { leaderId },
-    });
-    const isInitialBackfill = existingTradeCount === 0;
+    // Stage 2.3: Initialize cursor if not already done
+    if (!leader.apiCursorInitialized) {
+        const settings = await getStartupSettings();
 
-    if (isInitialBackfill) {
-        logger.info({ wallet, activityCount: activities.length }, 'Initial backfill - marking trades as historical');
+        if (settings.startupMode === 'flat') {
+            // Flat start: set cursor to now and skip historical ingestion
+            await prisma.leader.update({
+                where: { id: leaderId },
+                data: {
+                    apiCursorTs: new Date(),
+                    apiCursorInitialized: true,
+                    apiCursorUpdatedAt: new Date(),
+                },
+            });
+
+            logger.info({
+                wallet,
+                startupMode: 'flat',
+                cursorTs: new Date().toISOString(),
+            }, 'Cursor initialized (flat start) - no historical ingestion');
+
+            return 0;  // Skip ingestion on flat start initialization
+        } else {
+            // Warm start: set cursor to (now - warmStartSeconds) and ingest from there
+            const warmStartDate = new Date(Date.now() - settings.warmStartSeconds * 1000);
+
+            await prisma.leader.update({
+                where: { id: leaderId },
+                data: {
+                    apiCursorTs: warmStartDate,
+                    apiCursorInitialized: true,
+                    apiCursorUpdatedAt: new Date(),
+                },
+            });
+
+            logger.info({
+                wallet,
+                startupMode: 'warm',
+                warmStartSeconds: settings.warmStartSeconds,
+                cursorTs: warmStartDate.toISOString(),
+            }, 'Cursor initialized (warm start) - will ingest recent history as backfill');
+
+            // Continue to fetch from warmStartDate (these will be marked as backfill)
+        }
     }
 
-    let newTradesCount = 0;
+    // Refresh leader to get updated cursor
+    const leaderWithCursor = await prisma.leader.findUnique({
+        where: { id: leaderId },
+    });
 
-    for (const activity of activities) {
+    if (!leaderWithCursor) return 0;
+
+    const cursorTs = leaderWithCursor.apiCursorTs;
+
+    // Stage 2.3: Fetch all trades since cursor using pagination
+    let allActivities: PolymarketActivity[] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+        const page = await fetchWalletActivitySince(wallet, cursorTs, CURSOR_PAGE_SIZE, offset);
+
+        if (page.length === 0) {
+            hasMore = false;
+        } else {
+            allActivities = allActivities.concat(page);
+            offset += page.length;
+
+            // If page is smaller than limit, we've reached the end
+            if (page.length < CURSOR_PAGE_SIZE) {
+                hasMore = false;
+            }
+        }
+    }
+
+    if (allActivities.length === 0) {
+        logger.debug({ wallet, cursorTs: cursorTs?.toISOString() }, 'No new trades since cursor');
+        return 0;
+    }
+
+    // Sort by timestamp ascending for proper cursor advancement
+    allActivities.sort((a, b) => a.timestamp - b.timestamp);
+
+    logger.info({
+        wallet,
+        activityCount: allActivities.length,
+        cursorTs: cursorTs?.toISOString(),
+    }, 'Processing trades since cursor');
+
+    let newTradesCount = 0;
+    let maxTimestamp = cursorTs?.getTime() ?? 0;
+
+    for (const activity of allActivities) {
         try {
             const dedupeKey = buildDedupeKey(wallet, activity);
 
-            // Check if trade already exists (by dedupe key)
+            // Stage 2.4: Check if trade already exists BEFORE creating TradeRaw
             const existingTrade = await prisma.trade.findUnique({
                 where: { dedupeKey },
             });
 
             if (existingTrade) {
-                // Already ingested, skip
+                // Already ingested, skip - don't create TradeRaw (fixes bloat)
                 continue;
             }
 
-            // Store raw payload first
+            // Track max timestamp for cursor update
+            const activityTs = activity.timestamp * 1000;
+            if (activityTs > maxTimestamp) {
+                maxTimestamp = activityTs;
+            }
+
+            // Stage 2.4: Only create TradeRaw for new trades (fix bloat)
             const rawRecord = await prisma.tradeRaw.create({
                 data: {
                     leaderId,
@@ -69,14 +159,17 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
             const leaderSize = activity.size;
             const leaderUsdc = activity.usdcSize;
 
+            // Determine if this is a backfill trade (from warm start history)
+            // Compare trade timestamp to cursor initialization time
+            const isBackfill = cursorTs !== null && new Date(activity.timestamp * 1000) < cursorTs;
+
             // Store normalized trade with FK to raw
-            // Mark as backfill if this is the initial poll for this leader
             const newTrade = await prisma.trade.create({
                 data: {
                     leaderId,
                     dedupeKey,
                     txHash: activity.transactionHash,
-                    tradeTs: new Date(activity.timestamp * 1000),  // timestamp is in seconds
+                    tradeTs: new Date(activity.timestamp * 1000),
                     side: activity.side,
                     conditionId: activity.conditionId,
                     outcome: activity.outcome,
@@ -84,7 +177,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                     leaderSize,
                     leaderUsdc,
                     title: activity.title || null,
-                    isBackfill: isInitialBackfill,  // Mark as historical if initial backfill
+                    isBackfill: isBackfill,
                     rawId: rawRecord.id,
                 },
             });
@@ -105,9 +198,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                 await prisma.leaderFill.update({
                     where: { id: existingPolygonFill.id },
                     data: {
-                        // Update title if Polygon didn't have it
                         title: activity.title || existingPolygonFill.title,
-                        // Update conditionId/outcome if they were 'unknown'
                         conditionId: existingPolygonFill.conditionId === 'unknown'
                             ? activity.conditionId
                             : existingPolygonFill.conditionId,
@@ -134,15 +225,10 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                     side: activity.side,
                     usdcAmount: leaderUsdc,
                 });
-
-                // Continue to next activity - don't create duplicate LeaderFill
-                // But still process mapping/quotes/paper intent below
             } else {
                 // No Polygon record exists - create new LeaderFill from API
-                // Use a distinct dedupeKey for API source to avoid collision with Polygon
                 const leaderFillDedupeKey = `data_api:${dedupeKey}`;
 
-                // We must create a LeaderFillRaw for the LeaderFill relation
                 const leaderFillRaw = await prisma.leaderFillRaw.create({
                     data: {
                         source: 'data_api',
@@ -155,10 +241,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                         leaderId,
                         source: 'data_api',
                         leaderRole: 'unknown',
-                        // API doesn't give block/log info
                         txHash: activity.transactionHash,
-
-                        // Trade details
                         tokenId: activity.asset || 'unknown',
                         conditionId: activity.conditionId,
                         outcome: activity.outcome,
@@ -166,21 +249,14 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                         leaderPrice: leaderPrice,
                         leaderSize: leaderSize,
                         leaderUsdc: leaderUsdc,
-
-                        // Timestamps
                         fillTs: new Date(activity.timestamp * 1000),
                         detectedAt: new Date(),
-
-                        // Metadata
                         title: activity.title || null,
-                        isBackfill: isInitialBackfill,
-
-                        // Link to correct raw table
+                        isBackfill: isBackfill,
                         dedupeKey: leaderFillDedupeKey,
                         rawId: leaderFillRaw.id,
                     }
                 }).catch(err => {
-                    // Ignore duplicates if they somehow happen, but log errors
                     if (err.code !== 'P2002') {
                         logger.error({ error: err, dedupeKey }, 'Failed to create LeaderFill from API');
                     }
@@ -206,6 +282,7 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                 price: leaderPrice,
                 usdc: leaderUsdc,
                 title: activity.title,
+                isBackfill,
             }, 'Ingested new trade');
 
             // Resolve and cache market mapping for this trade
@@ -220,13 +297,13 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
                 }
 
                 // Only generate paper intent for live trades (not backfill)
-                if (!isInitialBackfill) {
+                if (!isBackfill) {
                     await generatePaperIntentForTrade(newTrade.id);
                 }
             } else {
                 logger.warn({ conditionId: activity.conditionId, outcome: activity.outcome }, 'Mapping not found - quotes will be skipped');
                 // Only generate paper intent for live trades (not backfill)
-                if (!isInitialBackfill) {
+                if (!isBackfill) {
                     await generatePaperIntentForTrade(newTrade.id);
                 }
             }
@@ -240,6 +317,20 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
 
             logger.error({ error, activity }, 'Failed to ingest trade');
         }
+    }
+
+    // Stage 2.3: Update cursor to max timestamp + 1 second to avoid re-fetching
+    if (maxTimestamp > 0) {
+        const newCursor = new Date(maxTimestamp + 1000);  // Add 1 second buffer
+        await prisma.leader.update({
+            where: { id: leaderId },
+            data: {
+                apiCursorTs: newCursor,
+                apiCursorUpdatedAt: new Date(),
+            },
+        });
+
+        logger.debug({ wallet, newCursor: newCursor.toISOString() }, 'Cursor updated');
     }
 
     return newTradesCount;

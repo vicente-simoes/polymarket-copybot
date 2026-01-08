@@ -1,6 +1,7 @@
 // Polymarket API client for fetching wallet activity
 import axios from 'axios';
 import pino from 'pino';
+import { prisma } from '@polymarket-bot/db';
 
 const logger = pino({ name: 'polymarket-api' });
 
@@ -30,6 +31,7 @@ export interface PolymarketActivity {
 
 /**
  * Fetch trade activity for a wallet from Polymarket Data API
+ * Legacy function - use fetchWalletActivitySince for cursor-based polling
  */
 export async function fetchWalletActivity(
     wallet: string,
@@ -70,6 +72,64 @@ export async function fetchWalletActivity(
 }
 
 /**
+ * Stage 2.3: Fetch trade activity since a specific timestamp (cursor-based)
+ * Uses start parameter for timestamp-based pagination
+ */
+export async function fetchWalletActivitySince(
+    wallet: string,
+    startTs: Date | null,
+    limit: number = 500,
+    offset: number = 0
+): Promise<PolymarketActivity[]> {
+    try {
+        const url = `${POLYMARKET_API_BASE}/activity`;
+
+        // Convert Date to Unix timestamp (seconds) for API
+        const startParam = startTs ? Math.floor(startTs.getTime() / 1000) : undefined;
+
+        logger.debug({ wallet, limit, offset, startTs: startParam }, 'Fetching wallet activity since timestamp');
+
+        const response = await axios.get<PolymarketActivity[]>(url, {
+            params: {
+                user: wallet,
+                limit,
+                offset,
+                start: startParam,  // Only fetch trades after this timestamp
+                type: 'TRADE',
+            },
+            timeout: 15000,
+        });
+
+        const trades = response.data || [];
+        logger.info({ wallet, tradeCount: trades.length, startTs: startParam, offset }, 'Fetched trades since timestamp');
+
+        return trades;
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            logger.error({
+                wallet,
+                status: error.response?.status,
+                message: error.message,
+            }, 'Failed to fetch wallet activity since timestamp');
+
+            return [];
+        }
+        throw error;
+    }
+}
+
+/**
+ * Stage 2.2: Get settings with startup mode configuration
+ */
+export async function getStartupSettings(): Promise<{ startupMode: string; warmStartSeconds: number }> {
+    const settings = await prisma.settings.findFirst();
+    return {
+        startupMode: settings?.startupMode ?? 'flat',
+        warmStartSeconds: settings?.warmStartSeconds ?? 900,
+    };
+}
+
+/**
  * Build dedupe key for a trade to prevent duplicates
  * Format: leaderWallet|txHash|side|conditionId|outcome|size|price
  */
@@ -84,3 +144,4 @@ export function buildDedupeKey(wallet: string, activity: PolymarketActivity): st
         activity.price,
     ].join('|');
 }
+

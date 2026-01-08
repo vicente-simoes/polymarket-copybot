@@ -114,6 +114,14 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
                             : err;
                         logger.error({ error: serialized }, 'Underlying WebSocket error (caught)');
                     });
+
+                    // Stage 4.2: Add close listener with automatic reconnection
+                    rawSocket.on('close', () => {
+                        if (!this.isRunning) return;  // Don't reconnect if we're stopping
+
+                        logger.warn('WebSocket closed unexpectedly - triggering reconnection');
+                        this.scheduleReconnect();
+                    });
                 }
 
                 logger.info({ attempt }, 'WebSocket connection established successfully');
@@ -172,6 +180,97 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
         this.isRunning = true;
         this.lastWsLogAt = new Date(); // Initialize to avoid immediate staleness
         logger.info({ leaderCount: this.leaders.length }, 'Polygon watcher started');
+    }
+
+    /**
+     * Stage 4.2: Schedule reconnection with exponential backoff
+     */
+    private reconnectAttempt = 0;
+    private reconnectTimeout?: NodeJS.Timeout;
+
+    private scheduleReconnect(): void {
+        // Clear any existing reconnect timeout
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+        }
+
+        // Calculate backoff: 5s, 10s, 20s, 40s, max 60s
+        const backoffMs = Math.min(5000 * Math.pow(2, this.reconnectAttempt), 60000);
+        this.reconnectAttempt++;
+
+        logger.info({
+            attempt: this.reconnectAttempt,
+            backoffMs
+        }, 'Scheduling WebSocket reconnection');
+
+        this.reconnectTimeout = setTimeout(async () => {
+            try {
+                await this.reconnect();
+                this.reconnectAttempt = 0;  // Reset on success
+            } catch (error) {
+                const serialized = error instanceof Error
+                    ? { message: error.message, name: error.name }
+                    : error;
+                logger.error({ error: serialized }, 'Reconnection failed');
+
+                // Schedule another attempt if still running
+                if (this.isRunning) {
+                    this.scheduleReconnect();
+                }
+            }
+        }, backoffMs);
+    }
+
+    /**
+     * Stage 4.2: Reconnect WebSocket and resubscribe
+     */
+    private async reconnect(): Promise<void> {
+        const config = getConfig();
+
+        logger.info('Attempting WebSocket reconnection...');
+
+        // Clean up old provider
+        if (this.wsProvider) {
+            try { await this.wsProvider.destroy(); } catch (e) { /* ignore */ }
+            this.wsProvider = null;
+        }
+
+        // Create new WS provider
+        this.wsProvider = new ethers.WebSocketProvider(config.polygonWsUrl);
+
+        // Attach error handler
+        this.wsProvider.on('error', (error) => {
+            this.errorCount++;
+            const serialized = error instanceof Error
+                ? { message: error.message, stack: error.stack, name: error.name }
+                : error;
+            logger.error({ error: serialized }, 'Polygon WebSocket provider error (after reconnect)');
+        });
+
+        await this.wsProvider.ready;
+
+        // Attach close handler for future disconnects
+        const rawSocket = (this.wsProvider as any).websocket;
+        if (rawSocket) {
+            rawSocket.on('error', (err: any) => {
+                const serialized = err instanceof Error
+                    ? { message: err.message, name: err.name }
+                    : err;
+                logger.error({ error: serialized }, 'Underlying WebSocket error (caught, after reconnect)');
+            });
+
+            rawSocket.on('close', () => {
+                if (!this.isRunning) return;
+                logger.warn('WebSocket closed unexpectedly after reconnect - triggering another reconnection');
+                this.scheduleReconnect();
+            });
+        }
+
+        // Resubscribe to logs
+        await this.subscribeToLogs();
+
+        this.lastWsLogAt = new Date();
+        logger.info('WebSocket reconnection successful - subscriptions restored');
     }
 
     async stop(): Promise<void> {
@@ -283,48 +382,115 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
         }));
     }
 
+    /**
+     * Stage 4.1: Subscribe to logs with wallet-filtered topics
+     * Creates separate subscriptions for maker and taker roles to dramatically reduce log volume.
+     * 
+     * OrderFilled event signature:
+     * event OrderFilled(bytes32 indexed orderHash, address indexed maker, address indexed taker, ...)
+     * 
+     * Topics layout:
+     * - topics[0]: event signature hash (ORDER_FILLED_TOPIC)
+     * - topics[1]: orderHash (indexed)
+     * - topics[2]: maker address (indexed)
+     * - topics[3]: taker address (indexed)
+     * 
+     * We create separate subscriptions filtering by:
+     * - Maker: topics[2] matches any of our leader wallets
+     * - Taker: topics[3] matches any of our leader wallets
+     */
     private async subscribeToLogs(): Promise<void> {
         const config = getConfig();
         const exchanges = [config.polyExchangeCtf, config.polyExchangeNegRisk];
 
+        // Convert wallet addresses to zero-padded 32-byte format for topic matching
+        const walletTopics = this.leaders.map(l =>
+            ethers.zeroPadValue(l.wallet, 32)
+        );
+
+        if (walletTopics.length === 0) {
+            logger.warn('No wallet topics to subscribe to - no leaders enabled');
+            return;
+        }
+
+        logger.info({
+            walletCount: walletTopics.length,
+            wallets: this.leaders.map(l => l.label),
+        }, 'Setting up wallet-filtered log subscriptions');
+
         for (const exchange of exchanges) {
             if (!exchange || exchange === '0x') continue;
 
-            const filter = {
+            // Stage 4.1: Maker subscription - filter topics[2] (maker address)
+            const makerFilter = {
                 address: exchange,
-                topics: [ORDER_FILLED_TOPIC],
+                topics: [
+                    ORDER_FILLED_TOPIC,  // topics[0]: event signature
+                    null,                 // topics[1]: orderHash - any
+                    walletTopics,         // topics[2]: maker - matches any of our leaders
+                    null,                 // topics[3]: taker - any
+                ],
             };
 
-            this.wsProvider!.on(filter, async (log: ethers.Log) => {
-                // Track last WS log received for health check
-                this.lastWsLogAt = new Date();
-
-                // Log first event received (helps debug subscription issues)
-                if (!this.hasReceivedFirstWsLog) {
-                    this.hasReceivedFirstWsLog = true;
-                    logger.info({
-                        exchange: log.address,
-                        blockNumber: log.blockNumber,
-                        txHash: log.transactionHash,
-                    }, 'First WebSocket log event received - subscription is working!');
-                }
-
-                try {
-                    await this.processLog({
-                        topics: log.topics as string[],
-                        data: log.data,
-                        blockNumber: log.blockNumber,
-                        transactionHash: log.transactionHash,
-                        logIndex: log.index,
-                        address: log.address,
-                    });
-                } catch (error) {
-                    this.errorCount++;
-                    logger.error({ error, txHash: log.transactionHash }, 'Error processing log');
-                }
+            this.wsProvider!.on(makerFilter, async (log: ethers.Log) => {
+                await this.handleLogEvent(log, 'maker');
             });
 
-            logger.info({ exchange }, 'Subscribed to OrderFilled events');
+            logger.info({ exchange, role: 'maker' }, 'Subscribed to OrderFilled events (maker-filtered)');
+
+            // Stage 4.1: Taker subscription - filter topics[3] (taker address)
+            const takerFilter = {
+                address: exchange,
+                topics: [
+                    ORDER_FILLED_TOPIC,  // topics[0]: event signature
+                    null,                 // topics[1]: orderHash - any
+                    null,                 // topics[2]: maker - any
+                    walletTopics,         // topics[3]: taker - matches any of our leaders
+                ],
+            };
+
+            this.wsProvider!.on(takerFilter, async (log: ethers.Log) => {
+                await this.handleLogEvent(log, 'taker');
+            });
+
+            logger.info({ exchange, role: 'taker' }, 'Subscribed to OrderFilled events (taker-filtered)');
+        }
+
+        logger.info({
+            subscriptions: exchanges.length * 2,  // 2 per exchange (maker + taker)
+        }, 'Wallet-filtered subscriptions established - log volume reduced');
+    }
+
+    /**
+     * Handle incoming log event from filtered subscription
+     */
+    private async handleLogEvent(log: ethers.Log, expectedRole: 'maker' | 'taker'): Promise<void> {
+        // Track last WS log received for health check
+        this.lastWsLogAt = new Date();
+
+        // Log first event received (helps debug subscription issues)
+        if (!this.hasReceivedFirstWsLog) {
+            this.hasReceivedFirstWsLog = true;
+            logger.info({
+                exchange: log.address,
+                blockNumber: log.blockNumber,
+                txHash: log.transactionHash,
+                matchedRole: expectedRole,
+            }, 'First WebSocket log event received - wallet-filtered subscription is working!');
+        }
+
+        try {
+            await this.processLog({
+                topics: log.topics as string[],
+                data: log.data,
+                blockNumber: log.blockNumber,
+                transactionHash: log.transactionHash,
+                logIndex: log.index,
+                address: log.address,
+            });
+        } catch (error) {
+            this.errorCount++;
+            logger.error({ error, txHash: log.transactionHash, expectedRole }, 'Error processing log');
         }
     }
 
@@ -585,6 +751,18 @@ export class PolygonLeaderFillSource implements LeaderFillSource {
                 dedupeKey,
                 rawId: raw.id,
             },
+        });
+
+        // Record latency event for stats (Polygon source)
+        await recordLatencyEvent({
+            dedupeKey: decoded.transactionHash.toLowerCase(),
+            source: 'polygon',
+            detectedAt: detectedAt,
+            tokenId: fillInfo.tokenId,
+            conditionId: tokenInfo?.conditionId || 'unknown',
+            leaderWallet: involvedLeader.wallet.toLowerCase(),
+            side: fillInfo.side,
+            usdcAmount: fillInfo.usdcAmount,
         });
 
         // Emit event to handlers

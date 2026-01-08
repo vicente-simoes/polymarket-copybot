@@ -142,12 +142,16 @@ export async function simulateFillForIntent(intentId: string): Promise<string | 
         }
     }
 
+    // Calculate shares from USDC target
+    const fillShares = filled && fillPrice ? Number(intent.yourUsdcTarget) / fillPrice : null;
+
     // Create the fill record
     const fill = await prisma.paperFill.create({
         data: {
             intentId: intent.id,
             filled,
             fillPrice: filled ? fillPrice : null,
+            fillShares: fillShares,  // Stage 8.3: Track filled shares
             fillAt: filled ? new Date() : null,
             matchSamePrice,
             slippageAbs: filled ? slippageAbs : null,
@@ -157,7 +161,18 @@ export async function simulateFillForIntent(intentId: string): Promise<string | 
     });
 
     // Update position tracking for P&L if filled
-    if (filled && fillPrice !== null) {
+    if (filled && fillPrice !== null && fillShares !== null) {
+        // Stage 8.3: Update our paper position (authoritative holdings)
+        const { updatePaperPosition } = await import('./ingest/paperPosition.js');
+        await updatePaperPosition(
+            trade.conditionId,
+            trade.outcome.toUpperCase(),
+            side as 'BUY' | 'SELL',
+            fillShares,
+            Number(intent.yourUsdcTarget)
+        );
+
+        // Also update the legacy Position model for P&L display
         const { updatePosition } = await import('@polymarket-bot/core');
         await updatePosition({
             marketKey: mapping.marketKey,
@@ -165,7 +180,7 @@ export async function simulateFillForIntent(intentId: string): Promise<string | 
             outcome: trade.outcome.toUpperCase(),
             title: trade.title ?? undefined,
             operationType: side as 'BUY' | 'SELL' | 'SPLIT' | 'MERGE',
-            shares: Number(intent.yourUsdcTarget) / fillPrice, // Calculate shares from USDC target
+            shares: fillShares,
             price: fillPrice,
         });
     }
@@ -179,6 +194,7 @@ export async function simulateFillForIntent(intentId: string): Promise<string | 
         matchSamePrice,
         filled,
         fillPrice,
+        fillShares: fillShares?.toFixed(4),
         slippageAbs: slippageAbs?.toFixed(4),
         slippagePct: slippagePct ? `${(slippagePct * 100).toFixed(2)}%` : null,
     }, filled ? 'Paper fill: FILLED' : 'Paper fill: NOT FILLED');
