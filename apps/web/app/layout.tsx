@@ -7,9 +7,6 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 export const metadata: Metadata = {
   title: 'PolymarketSpy',
   description: 'Paper copy trading system for Polymarket',
-  icons: {
-    icon: '/logo6.png',
-  },
 }
 
 export default function RootLayout({

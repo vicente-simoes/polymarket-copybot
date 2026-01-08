@@ -64,6 +64,25 @@ async function runPollLoop(): Promise<void> {
 
     logger.info('Database connected, starting poll loop');
 
+    // Run API backfill on startup (fix_plan.md Step 2)
+    // This catches up any missed trades via Polymarket API before starting real-time polling
+    try {
+        const { runApiBackfill } = await import('./backfill/apiBackfill.js');
+        const backfillResult = await runApiBackfill();
+        if (backfillResult.totalIngested > 0) {
+            logger.info({
+                totalIngested: backfillResult.totalIngested,
+                leadersProcessed: backfillResult.leadersProcessed,
+                errors: backfillResult.errors,
+            }, 'API backfill complete');
+        }
+    } catch (error) {
+        const serialized = error instanceof Error
+            ? { message: error.message, name: error.name }
+            : error;
+        logger.error({ error: serialized }, 'API backfill failed, continuing with real-time polling');
+    }
+
     // Start BookStore if enabled (ws or ws+snapshot mode)
     if (config.bookStoreMode === 'ws' || config.bookStoreMode === 'ws+snapshot') {
         bookStore = createClobWsBookStore();
