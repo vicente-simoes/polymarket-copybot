@@ -46,17 +46,48 @@ export interface WorkerConfig {
     // Registry sync settings (Phase 2)
     registrySyncOnStartup: boolean;
     registrySyncIntervalMs: number;  // 0 = disabled
+
+    // Polygon backfill settings (rate limit protection)
+    polygonBackfillOnStartup: boolean;     // default false - gate startup backfill
+    polygonBackfillStartupBlocks: number;  // default 50 - how many blocks to backfill on startup
+    polygonBackfillThrottleMs: number;     // default 2000 - ms between getLogs calls
+
+    // Polygon robustness settings (Step 3)
+    polygonReconcileIntervalMs: number;    // default 300000 (5 min) - periodic reconciliation interval
+    polygonReconcileBlocks: number;        // default 50 - blocks to backfill during reconciliation
+    polygonHealthStaleMs: number;          // default 120000 (2 min) - max time without events before unhealthy
     gammaApiUrl: string;
+
+    // API Backfill settings (fix_plan.md Step 2)
+    apiBackfillOnStartup: boolean;              // default true - run API backfill on startup
+    apiBackfillStartupLookbackMinutes: number;  // default 1440 (24h) - how far back to look
+    apiBackfillPageSize: number;                // default 200 - trades per API request
+    apiBackfillRateLimitRps: number;            // default 2 - requests per second limit
+    apiBackfillMaxConcurrency: number;          // default 2 - max concurrent leader backfills
+
+    // API Lag Fallback settings (fix_plan.md Step 6)
+    apiLagFallbackEnabled: boolean;             // default true - enable API lag fallback
+    apiLagWaitMs: number;                       // default 500 - initial wait before retry
+    apiLagMaxWaitMs: number;                    // default 8000 - max total wait window
+    chainFallbackEnabled: boolean;              // default true - use chain receipt if API times out
 }
 
 /**
  * Parse and validate configuration from environment variables
  */
 function parseConfig(): WorkerConfig {
-    // Parse trigger mode
-    const triggerModeRaw = process.env.TRIGGER_MODE || 'both';
+    // Parse trigger mode (fix_plan.md Step 4)
+    // Support both TRADE_DETECTION_MODE (new) and TRIGGER_MODE (legacy)
+    // Also support 'api' as alias for 'data_api'
+    let triggerModeRaw = process.env.TRADE_DETECTION_MODE || process.env.TRIGGER_MODE || 'both';
+
+    // Map 'api' to 'data_api' for backwards compatibility
+    if (triggerModeRaw === 'api') {
+        triggerModeRaw = 'data_api';
+    }
+
     if (!['data_api', 'polygon', 'both'].includes(triggerModeRaw)) {
-        throw new Error(`Invalid TRIGGER_MODE: ${triggerModeRaw}. Must be 'data_api', 'polygon', or 'both'`);
+        throw new Error(`Invalid TRADE_DETECTION_MODE: ${triggerModeRaw}. Must be 'api', 'polygon', or 'both'`);
     }
     const triggerMode = triggerModeRaw as TriggerMode;
 
@@ -106,6 +137,29 @@ function parseConfig(): WorkerConfig {
         registrySyncOnStartup: process.env.REGISTRY_SYNC_ON_STARTUP !== 'false',  // default true
         registrySyncIntervalMs: parseInt(process.env.REGISTRY_SYNC_INTERVAL_MS || '1800000', 10),  // 30 min default
         gammaApiUrl: process.env.GAMMA_API_URL || 'https://gamma-api.polymarket.com',
+
+        // Polygon backfill settings (rate limit protection)
+        polygonBackfillOnStartup: process.env.POLYGON_BACKFILL_ON_STARTUP === 'true',  // default false
+        polygonBackfillStartupBlocks: parseInt(process.env.POLYGON_BACKFILL_STARTUP_BLOCKS || '50', 10),
+        polygonBackfillThrottleMs: parseInt(process.env.POLYGON_BACKFILL_THROTTLE_MS || '2000', 10),
+
+        // Polygon robustness settings (Step 3)
+        polygonReconcileIntervalMs: parseInt(process.env.POLYGON_RECONCILE_INTERVAL_MS || '300000', 10),  // 5 min default
+        polygonReconcileBlocks: parseInt(process.env.POLYGON_RECONCILE_BLOCKS || '50', 10),
+        polygonHealthStaleMs: parseInt(process.env.POLYGON_HEALTH_STALE_MS || '120000', 10),  // 2 min default
+
+        // API Backfill settings (fix_plan.md Step 2)
+        apiBackfillOnStartup: process.env.API_BACKFILL_ON_STARTUP !== 'false',  // default true
+        apiBackfillStartupLookbackMinutes: parseInt(process.env.API_BACKFILL_STARTUP_LOOKBACK_MINUTES || '1440', 10),  // 24h default
+        apiBackfillPageSize: parseInt(process.env.API_BACKFILL_PAGE_SIZE || '200', 10),
+        apiBackfillRateLimitRps: parseInt(process.env.API_BACKFILL_RATE_LIMIT_RPS || '2', 10),
+        apiBackfillMaxConcurrency: parseInt(process.env.API_BACKFILL_MAX_CONCURRENCY || '2', 10),
+
+        // API Lag Fallback settings (fix_plan.md Step 6)
+        apiLagFallbackEnabled: process.env.API_LAG_FALLBACK_ENABLED !== 'false',  // default true
+        apiLagWaitMs: parseInt(process.env.API_LAG_WAIT_MS || '500', 10),
+        apiLagMaxWaitMs: parseInt(process.env.API_LAG_MAX_WAIT_MS || '8000', 10),
+        chainFallbackEnabled: process.env.CHAIN_FALLBACK_ENABLED !== 'false',  // default true
     };
 }
 
@@ -153,5 +207,11 @@ export function logConfig(logger: { info: (obj: object, msg: string) => void }):
         registrySyncOnStartup: config.registrySyncOnStartup,
         registrySyncIntervalMs: config.registrySyncIntervalMs,
         gammaApiUrl: config.gammaApiUrl,
+        polygonBackfillOnStartup: config.polygonBackfillOnStartup,
+        polygonBackfillStartupBlocks: config.polygonBackfillStartupBlocks,
+        polygonBackfillThrottleMs: config.polygonBackfillThrottleMs,
+        polygonReconcileIntervalMs: config.polygonReconcileIntervalMs,
+        polygonReconcileBlocks: config.polygonReconcileBlocks,
+        polygonHealthStaleMs: config.polygonHealthStaleMs,
     }, 'Worker configuration loaded');
 }

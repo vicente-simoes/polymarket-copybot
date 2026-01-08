@@ -539,3 +539,15 @@ model WorkerConfig {
 
   @@map("worker_config")
 }
+
+// ============================================================================
+// System Locks - Distributed locking for single-flight patterns
+// ============================================================================
+model SystemLock {
+  lockKey   String   @id           // Lock identifier (e.g., 'polygon_watcher_lock')
+  lockValue String                 // Lock holder ID (e.g., 'pid-timestamp')
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt    // Used for TTL expiration checks
+
+  @@map("system_locks")
+}

@@ -91,65 +91,113 @@ export async function ingestTradesForLeader(leaderId: string, wallet: string): P
 
             newTradesCount++;
 
-            // Create LeaderFill record (Unified Registry)
-            // Use a distinct dedupeKey for API source to avoid collision with Polygon
-            const leaderFillDedupeKey = `data_api:${dedupeKey}`;
-
-            // We must create a LeaderFillRaw for the LeaderFill relation
-            const leaderFillRaw = await prisma.leaderFillRaw.create({
-                data: {
-                    source: 'data_api',
-                    payload: activity as any,
-                }
-            });
-
-            await prisma.leaderFill.create({
-                data: {
-                    leaderId,
-                    source: 'data_api',
-                    leaderRole: 'unknown',
-                    // API doesn't give block/log info
+            // Check if Polygon already recorded this trade (by txHash)
+            // If so, enrich the existing Polygon record with API metadata
+            const existingPolygonFill = await prisma.leaderFill.findFirst({
+                where: {
                     txHash: activity.transactionHash,
+                    source: 'polygon',
+                },
+            });
 
-                    // Trade details
-                    tokenId: activity.asset || 'unknown',
-                    conditionId: activity.conditionId,
-                    outcome: activity.outcome,
-                    side: activity.side,
-                    leaderPrice: leaderPrice,
-                    leaderSize: leaderSize,
-                    leaderUsdc: leaderUsdc,
+            if (existingPolygonFill) {
+                // Enrich the existing Polygon record with API metadata
+                await prisma.leaderFill.update({
+                    where: { id: existingPolygonFill.id },
+                    data: {
+                        // Update title if Polygon didn't have it
+                        title: activity.title || existingPolygonFill.title,
+                        // Update conditionId/outcome if they were 'unknown'
+                        conditionId: existingPolygonFill.conditionId === 'unknown'
+                            ? activity.conditionId
+                            : existingPolygonFill.conditionId,
+                        outcome: existingPolygonFill.outcome === 'unknown'
+                            ? activity.outcome
+                            : existingPolygonFill.outcome,
+                    },
+                });
 
-                    // Timestamps
-                    fillTs: new Date(activity.timestamp * 1000),
+                logger.info({
+                    txHash: activity.transactionHash,
+                    title: activity.title,
+                    previousTitle: existingPolygonFill.title,
+                }, 'Enriched Polygon fill with API metadata');
+
+                // Record latency event for comparison (API was slower)
+                await recordLatencyEvent({
+                    dedupeKey: activity.transactionHash.toLowerCase(),
+                    source: 'data_api',
                     detectedAt: new Date(),
+                    tokenId: activity.asset || '',
+                    conditionId: activity.conditionId,
+                    leaderWallet: wallet.toLowerCase(),
+                    side: activity.side,
+                    usdcAmount: leaderUsdc,
+                });
 
-                    // Metadata
-                    title: activity.title || null,
-                    isBackfill: isInitialBackfill,
+                // Continue to next activity - don't create duplicate LeaderFill
+                // But still process mapping/quotes/paper intent below
+            } else {
+                // No Polygon record exists - create new LeaderFill from API
+                // Use a distinct dedupeKey for API source to avoid collision with Polygon
+                const leaderFillDedupeKey = `data_api:${dedupeKey}`;
 
-                    // Link to correct raw table
-                    dedupeKey: leaderFillDedupeKey,
-                    rawId: leaderFillRaw.id,
-                }
-            }).catch(err => {
-                // Ignore duplicates if they somehow happen, but log errors
-                if (err.code !== 'P2002') {
-                    logger.error({ error: err, dedupeKey }, 'Failed to create LeaderFill from API');
-                }
-            });
+                // We must create a LeaderFillRaw for the LeaderFill relation
+                const leaderFillRaw = await prisma.leaderFillRaw.create({
+                    data: {
+                        source: 'data_api',
+                        payload: activity as any,
+                    }
+                });
 
-            // Record latency event for comparison with Polygon source
-            await recordLatencyEvent({
-                dedupeKey: activity.transactionHash.toLowerCase(),
-                source: 'data_api',
-                detectedAt: new Date(),
-                tokenId: activity.asset || '',
-                conditionId: activity.conditionId,
-                leaderWallet: wallet.toLowerCase(),
-                side: activity.side,
-                usdcAmount: leaderUsdc,
-            });
+                await prisma.leaderFill.create({
+                    data: {
+                        leaderId,
+                        source: 'data_api',
+                        leaderRole: 'unknown',
+                        // API doesn't give block/log info
+                        txHash: activity.transactionHash,
+
+                        // Trade details
+                        tokenId: activity.asset || 'unknown',
+                        conditionId: activity.conditionId,
+                        outcome: activity.outcome,
+                        side: activity.side,
+                        leaderPrice: leaderPrice,
+                        leaderSize: leaderSize,
+                        leaderUsdc: leaderUsdc,
+
+                        // Timestamps
+                        fillTs: new Date(activity.timestamp * 1000),
+                        detectedAt: new Date(),
+
+                        // Metadata
+                        title: activity.title || null,
+                        isBackfill: isInitialBackfill,
+
+                        // Link to correct raw table
+                        dedupeKey: leaderFillDedupeKey,
+                        rawId: leaderFillRaw.id,
+                    }
+                }).catch(err => {
+                    // Ignore duplicates if they somehow happen, but log errors
+                    if (err.code !== 'P2002') {
+                        logger.error({ error: err, dedupeKey }, 'Failed to create LeaderFill from API');
+                    }
+                });
+
+                // Record latency event for comparison with Polygon source
+                await recordLatencyEvent({
+                    dedupeKey: activity.transactionHash.toLowerCase(),
+                    source: 'data_api',
+                    detectedAt: new Date(),
+                    tokenId: activity.asset || '',
+                    conditionId: activity.conditionId,
+                    leaderWallet: wallet.toLowerCase(),
+                    side: activity.side,
+                    usdcAmount: leaderUsdc,
+                });
+            }
 
             logger.info({
                 wallet,
